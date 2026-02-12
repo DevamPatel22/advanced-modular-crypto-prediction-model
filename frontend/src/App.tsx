@@ -1,15 +1,18 @@
-import { FormEvent, useMemo, useState } from "react";
-import { fetchPrediction } from "./lib/api";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { fetchPrediction, fetchTradableSymbols } from "./lib/api";
 import type { Horizon, PredictionResponse, Symbol } from "./types/prediction";
 
-const symbols: Symbol[] = ["BTC-USD", "ETH-USD", "SOL-USD"];
 const horizons: Horizon[] = ["5m", "1h", "4h"];
+const fallbackSymbols: Symbol[] = ["BTC-USD", "ETH-USD", "SOL-USD"];
 
 function App() {
+  const [symbols, setSymbols] = useState<Symbol[]>(fallbackSymbols);
   const [symbol, setSymbol] = useState<Symbol>("BTC-USD");
   const [horizon, setHorizon] = useState<Horizon>("1h");
   const [includeDebug, setIncludeDebug] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [symbolsLoading, setSymbolsLoading] = useState(true);
+  const [symbolsError, setSymbolsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PredictionResponse | null>(null);
 
@@ -22,6 +25,37 @@ function App() {
     if (!result) return "-";
     return result.predicted_close.toLocaleString(undefined, { maximumFractionDigits: 2 });
   }, [result]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadSymbols() {
+      setSymbolsLoading(true);
+      setSymbolsError(null);
+      try {
+        const liveSymbols = await fetchTradableSymbols("USD");
+        if (!active) return;
+        if (liveSymbols.length > 0) {
+          setSymbols(liveSymbols);
+          if (!liveSymbols.includes(symbol)) {
+            setSymbol(liveSymbols[0]);
+          }
+        } else {
+          setSymbols(fallbackSymbols);
+        }
+      } catch (loadError) {
+        if (!active) return;
+        setSymbolsError(loadError instanceof Error ? loadError.message : "Failed to load symbols");
+        setSymbols(fallbackSymbols);
+      } finally {
+        if (active) setSymbolsLoading(false);
+      }
+    }
+
+    void loadSymbols();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -73,6 +107,8 @@ function App() {
                 ))}
               </select>
             </label>
+            {symbolsLoading ? <p className="muted">Loading tradable USD symbols...</p> : null}
+            {symbolsError ? <p className="error">{symbolsError}</p> : null}
 
             <label>
               Horizon

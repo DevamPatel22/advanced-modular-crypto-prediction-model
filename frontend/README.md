@@ -17,5 +17,6 @@ Default app URL: `http://localhost:5173`
 ## Current Features
 
 - Prediction request form for symbol and horizon
+- Dynamic symbol loader (USD quote pairs from backend markets endpoint)
 - API integration with `POST /api/v1/predictions`
 - Loading, error, and result states

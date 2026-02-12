@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     supported_symbols: str = "BTC-USD,ETH-USD,SOL-USD"
     supported_horizons: str = "5m,1h,4h"
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    markets_source_url: str = "https://api.exchange.coinbase.com/products"
+    symbol_cache_ttl_seconds: int = 300
 
     model_config = SettingsConfigDict(
         env_file=".env",

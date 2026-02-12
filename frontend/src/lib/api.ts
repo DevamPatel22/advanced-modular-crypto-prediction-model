@@ -1,4 +1,8 @@
-import type { PredictionRequest, PredictionResponse } from "../types/prediction";
+import type {
+  MarketSymbolsResponse,
+  PredictionRequest,
+  PredictionResponse,
+} from "../types/prediction";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -17,4 +21,15 @@ export async function fetchPrediction(payload: PredictionRequest): Promise<Predi
   }
 
   return response.json() as Promise<PredictionResponse>;
+}
+
+export async function fetchTradableSymbols(quote = "USD"): Promise<string[]> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/markets/symbols?quote=${encodeURIComponent(quote)}`);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Failed to load symbols (${response.status}): ${text}`);
+  }
+
+  const data = (await response.json()) as MarketSymbolsResponse;
+  return data.symbols.map((item) => item.symbol);
 }

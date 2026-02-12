@@ -2,15 +2,22 @@ from app.config import get_settings
 from app.schemas.prediction import PredictionRequest, PredictionResponse
 
 
+def _deterministic_signal(seed: str) -> tuple[str, float, float]:
+    score = sum(ord(ch) for ch in seed)
+    direction = "up" if score % 2 == 0 else "down"
+    confidence = 0.52 + (score % 33) / 100
+    confidence = min(confidence, 0.89)
+    predicted_close = 10.0 + float((score * 137) % 100000) / 10
+    return direction, round(confidence, 4), round(predicted_close, 2)
+
+
 def generate_prediction(payload: PredictionRequest) -> PredictionResponse:
     """
     Temporary baseline inference stub.
     Replace this logic with real model inference once the training pipeline is integrated.
     """
     settings = get_settings()
-    direction = "up" if payload.symbol in {"BTC-USD", "ETH-USD"} else "down"
-    confidence = 0.64 if direction == "up" else 0.57
-    predicted_close = 45000.0 if payload.symbol == "BTC-USD" else 3200.0 if payload.symbol == "ETH-USD" else 120.0
+    direction, confidence, predicted_close = _deterministic_signal(f"{payload.symbol}:{payload.horizon}")
 
     debug = None
     if payload.include_debug:
@@ -28,4 +35,3 @@ def generate_prediction(payload: PredictionRequest) -> PredictionResponse:
         model_version=settings.default_model_version,
         debug=debug,
     )
-
