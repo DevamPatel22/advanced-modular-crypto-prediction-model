@@ -18,6 +18,7 @@ Build a reliable, scalable prediction platform that can evolve from MVP analytic
 - Repository scaffolding completed
 - Backend service bootstrap completed
 - Health endpoint available at `GET /api/v1/health`
+- Prediction contract available at `POST /api/v1/predictions` (stub inference)
 - Product scope and milestone roadmap documented
 
 ## Repository Structure
@@ -71,4 +72,3 @@ Then open:
 
 - This repository is intentionally developed in phased milestones.
 - Early commits prioritize stable foundations before feature breadth.
-

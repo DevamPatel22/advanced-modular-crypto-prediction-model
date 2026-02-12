@@ -9,6 +9,7 @@ Current scope in this milestone:
 - FastAPI application bootstrap
 - environment-based settings loading
 - health endpoint
+- prediction endpoint contract (service stub)
 
 ## Setup
 
@@ -29,4 +30,14 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 - `GET /` root service metadata
 - `GET /api/v1/health` service health status
+- `POST /api/v1/predictions` prediction response (stub until model integration)
 
+Example request:
+
+```json
+{
+  "symbol": "BTC-USD",
+  "horizon": "1h",
+  "include_debug": true
+}
+```

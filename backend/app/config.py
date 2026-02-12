@@ -8,6 +8,10 @@ class Settings(BaseSettings):
     app_env: str = "dev"
     app_version: str = "0.1.0"
     api_prefix: str = "/api/v1"
+    default_horizon: str = "1h"
+    default_model_version: str = "baseline-v1"
+    supported_symbols: str = "BTC-USD,ETH-USD,SOL-USD"
+    supported_horizons: str = "5m,1h,4h"
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -19,4 +23,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
