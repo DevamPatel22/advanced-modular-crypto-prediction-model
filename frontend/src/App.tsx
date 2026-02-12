@@ -18,6 +18,11 @@ function App() {
     return `${(result.confidence * 100).toFixed(1)}%`;
   }, [result]);
 
+  const projectedLabel = useMemo(() => {
+    if (!result) return "-";
+    return result.predicted_close.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }, [result]);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
@@ -47,73 +52,85 @@ function App() {
           Generate directional and price forecasts from the backend API and inspect confidence in a clean,
           production-ready interface.
         </p>
+        <div className="hero-chips">
+          <span>Live API Contract</span>
+          <span>Multi-Horizon</span>
+          <span>Risk-Aware Roadmap</span>
+        </div>
       </section>
 
-      <section className="card">
-        <h2>Request Prediction</h2>
-        <form className="grid" onSubmit={handleSubmit}>
-          <label>
-            Symbol
-            <select value={symbol} onChange={(e) => setSymbol(e.target.value as Symbol)}>
-              {symbols.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
+      <section className="layout-grid">
+        <article className="card request-card">
+          <h2>Request Prediction</h2>
+          <form className="grid" onSubmit={handleSubmit}>
+            <label>
+              Symbol
+              <select value={symbol} onChange={(e) => setSymbol(e.target.value as Symbol)}>
+                {symbols.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label>
-            Horizon
-            <select value={horizon} onChange={(e) => setHorizon(e.target.value as Horizon)}>
-              {horizons.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
+            <label>
+              Horizon
+              <select value={horizon} onChange={(e) => setHorizon(e.target.value as Horizon)}>
+                {horizons.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label className="checkbox-row">
-            <input type="checkbox" checked={includeDebug} onChange={(e) => setIncludeDebug(e.target.checked)} />
-            Include debug metadata
-          </label>
+            <label className="checkbox-row">
+              <input type="checkbox" checked={includeDebug} onChange={(e) => setIncludeDebug(e.target.checked)} />
+              Include debug metadata
+            </label>
 
-          <button type="submit" disabled={loading}>
-            {loading ? "Calculating..." : "Generate Forecast"}
-          </button>
-        </form>
-      </section>
+            <button type="submit" disabled={loading}>
+              {loading ? "Calculating..." : "Generate Forecast"}
+            </button>
+          </form>
+        </article>
 
-      <section className="card results">
-        <h2>Prediction Result</h2>
-        {error ? <p className="error">{error}</p> : null}
-        {!error && !result ? <p className="muted">No prediction yet. Submit a request to see results.</p> : null}
+        <article className={`card results ${result ? "panel-enter" : ""}`}>
+          <h2>Prediction Result</h2>
+          {error ? <p className="error">{error}</p> : null}
+          {!error && !result ? <p className="muted">No prediction yet. Submit a request to see results.</p> : null}
 
-        {result ? (
-          <dl>
-            <div>
-              <dt>Direction</dt>
-              <dd className={result.direction === "up" ? "up" : "down"}>{result.direction.toUpperCase()}</dd>
-            </div>
-            <div>
-              <dt>Confidence</dt>
-              <dd>{confidenceLabel}</dd>
-            </div>
-            <div>
-              <dt>Predicted Close</dt>
-              <dd>{result.predicted_close.toLocaleString()}</dd>
-            </div>
-            <div>
-              <dt>Model Version</dt>
-              <dd>{result.model_version}</dd>
-            </div>
-            <div>
-              <dt>Generated At</dt>
-              <dd>{new Date(result.generated_at).toLocaleString()}</dd>
-            </div>
-          </dl>
-        ) : null}
+          {result ? (
+            <>
+              <div className={`direction-banner ${result.direction}`}>
+                {result.direction === "up" ? "Bullish Signal" : "Bearish Signal"}
+              </div>
+              <dl>
+                <div>
+                  <dt>Direction</dt>
+                  <dd className={result.direction === "up" ? "up" : "down"}>{result.direction.toUpperCase()}</dd>
+                </div>
+                <div>
+                  <dt>Confidence</dt>
+                  <dd>{confidenceLabel}</dd>
+                </div>
+                <div>
+                  <dt>Predicted Close</dt>
+                  <dd>{projectedLabel}</dd>
+                </div>
+                <div>
+                  <dt>Model Version</dt>
+                  <dd>{result.model_version}</dd>
+                </div>
+                <div>
+                  <dt>Generated At</dt>
+                  <dd>{new Date(result.generated_at).toLocaleString()}</dd>
+                </div>
+              </dl>
+            </>
+          ) : null}
+        </article>
       </section>
     </main>
   );
