@@ -49,6 +49,17 @@ Then open:
 - Health: `http://localhost:8000/api/v1/health`
 - Swagger docs: `http://localhost:8000/docs`
 
+## Quick Start (Frontend)
+
+```bash
+cd frontend
+npm install
+cp .env.example .env
+npm run dev
+```
+
+Then open `http://localhost:5173`.
+
 ## Product Roadmap
 
 1. Backend foundation and configuration

@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     default_model_version: str = "baseline-v1"
     supported_symbols: str = "BTC-USD,ETH-USD,SOL-USD"
     supported_horizons: str = "5m,1h,4h"
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     model_config = SettingsConfigDict(
         env_file=".env",
