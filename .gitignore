@@ -1,0 +1,43 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Node / frontend
+node_modules/
+.next/
+dist/
+build/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Data / model artifacts
+*.sqlite3
+*.db
+*.parquet
+*.feather
+*.pkl
+*.joblib
+*.onnx
+*.h5
+*.pt
+*.pth
+
+# IDE
+.vscode/
+.idea/
