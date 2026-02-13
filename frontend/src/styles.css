@@ -65,6 +65,25 @@ a {
   font-weight: 600;
 }
 
+.rh-nav a {
+  cursor: pointer;
+}
+
+.rh-nav a.active {
+  color: #111;
+  position: relative;
+}
+
+.rh-nav a.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -8px;
+  height: 2px;
+  background: var(--green);
+}
+
 .rh-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
@@ -138,6 +157,30 @@ a {
   border-radius: 16px;
   box-shadow: var(--shadow);
   padding: 12px;
+}
+
+.prediction-page {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 18px 10px 0;
+}
+
+.prediction-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 18px;
+}
+
+.prediction-card h2,
+.prediction-card h3 {
+  margin: 0 0 8px;
+}
+
+.prediction-card p {
+  margin-top: 0;
 }
 
 .home-list .list-head {
@@ -538,6 +581,10 @@ select {
   }
 
   .rh-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .prediction-page {
     grid-template-columns: 1fr;
   }
 

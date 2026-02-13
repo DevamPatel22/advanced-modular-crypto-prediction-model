@@ -1,19 +1,14 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { fetchCandles, fetchPrediction, fetchTradableSymbols, getApiBaseUrl } from "./lib/api";
-import type {
-  CandleGranularity,
-  CandlePoint,
-  Horizon,
-  PredictionResponse,
-  Symbol,
-} from "./types/prediction";
+import type { CandleGranularity, CandlePoint, Horizon, PredictionResponse, Symbol } from "./types/prediction";
 
 const horizons: Horizon[] = ["5m", "1h", "4h"];
 const fallbackSymbols: Symbol[] = ["BTC-USD", "ETH-USD", "SOL-USD"];
 const rangeKeys = ["1D", "1W", "1M", "1Y", "MAX"] as const;
+
 type RangeKey = (typeof rangeKeys)[number];
 type ChartType = "candlestick" | "line";
-type ViewMode = "home" | "asset";
+type ViewMode = "home" | "asset" | "prediction";
 
 const rangeConfig: Record<RangeKey, { granularity: CandleGranularity; limit: number }> = {
   "1D": { granularity: "5m", limit: 288 },
@@ -346,9 +341,15 @@ function App() {
           Lapse Markets
         </div>
         <nav className="rh-nav">
-          <a onClick={() => setView("home")}>Markets</a>
-          <a onClick={() => setView("asset")}>Charting</a>
-          <a>Predictions</a>
+          <a className={view === "home" ? "active" : ""} onClick={() => setView("home")}>
+            Markets
+          </a>
+          <a className={view === "asset" ? "active" : ""} onClick={() => setView("asset")}>
+            Charting
+          </a>
+          <a className={view === "prediction" ? "active" : ""} onClick={() => setView("prediction")}>
+            Predictions
+          </a>
         </nav>
       </header>
 
@@ -403,13 +404,13 @@ function App() {
             </ul>
           </section>
         </main>
-      ) : (
+      ) : null}
+
+      {view === "asset" ? (
         <main className="rh-layout">
           <section className="rh-main">
             <div className="asset-top-row">
-              <button type="button" className="back-btn" onClick={() => setView("home")}>
-                ← Back to Markets
-              </button>
+              <button type="button" className="back-btn" onClick={() => setView("home")}>← Back to Markets</button>
             </div>
             <div className="rh-price-header">
               <div>
@@ -427,9 +428,7 @@ function App() {
                   Symbol
                   <select value={symbol} onChange={(event) => setSymbol(event.target.value as Symbol)}>
                     {symbols.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
+                      <option key={option} value={option}>{option}</option>
                     ))}
                   </select>
                 </label>
@@ -439,51 +438,21 @@ function App() {
             <div className="chart-actions">
               <div className="range-buttons">
                 {rangeKeys.map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className={key === range ? "pill active" : "pill"}
-                    onClick={() => setRange(key)}
-                  >
+                  <button key={key} type="button" className={key === range ? "pill active" : "pill"} onClick={() => setRange(key)}>
                     {key}
                   </button>
                 ))}
               </div>
               <div className="tool-buttons">
-                <button
-                  type="button"
-                  className={chartType === "line" ? "pill active" : "pill"}
-                  onClick={() => setChartType("line")}
-                >
-                  Line
-                </button>
-                <button
-                  type="button"
-                  className={chartType === "candlestick" ? "pill active" : "pill"}
-                  onClick={() => setChartType("candlestick")}
-                >
-                  Candles
-                </button>
+                <button type="button" className={chartType === "line" ? "pill active" : "pill"} onClick={() => setChartType("line")}>Line</button>
+                <button type="button" className={chartType === "candlestick" ? "pill active" : "pill"} onClick={() => setChartType("candlestick")}>Candles</button>
               </div>
             </div>
 
             <div className="indicator-row">
-              <label className="indicator-switch">
-                <input type="checkbox" checked={showMA} onChange={(event) => setShowMA(event.target.checked)} />
-                MA
-              </label>
-              <label className="indicator-switch">
-                <input type="checkbox" checked={showEMA} onChange={(event) => setShowEMA(event.target.checked)} />
-                EMA
-              </label>
-              <label className="indicator-switch">
-                <input
-                  type="checkbox"
-                  checked={showVolumeArea}
-                  onChange={(event) => setShowVolumeArea(event.target.checked)}
-                />
-                VA
-              </label>
+              <label className="indicator-switch"><input type="checkbox" checked={showMA} onChange={(event) => setShowMA(event.target.checked)} />MA</label>
+              <label className="indicator-switch"><input type="checkbox" checked={showEMA} onChange={(event) => setShowEMA(event.target.checked)} />EMA</label>
+              <label className="indicator-switch"><input type="checkbox" checked={showVolumeArea} onChange={(event) => setShowVolumeArea(event.target.checked)} />VA</label>
             </div>
 
             <p className="muted">US-tradable pairs loaded: {symbols.length} | Price feed: {liveSource}</p>
@@ -507,53 +476,30 @@ function App() {
                     }}
                   >
                     {showVolumeArea && volumeAreaPath ? <path d={volumeAreaPath} className="volume-area" /> : null}
-
                     {chartType === "line" ? <path d={closePath} className="close-line" /> : null}
-
-                    {chartType === "candlestick"
-                      ? candles.map((candle, index) => {
-                          const x = chartMetrics.xFor(index);
-                          const openY = chartMetrics.yForPrice(candle.open);
-                          const closeY = chartMetrics.yForPrice(candle.close);
-                          const highY = chartMetrics.yForPrice(candle.high);
-                          const lowY = chartMetrics.yForPrice(candle.low);
-                          const candleWidth = Math.max(2, chartMetrics.plotWidth / Math.max(candles.length, 90));
-                          const topY = Math.min(openY, closeY);
-                          const bodyHeight = Math.max(1, Math.abs(closeY - openY));
-                          const isUp = candle.close >= candle.open;
-                          return (
-                            <g key={candle.start_time}>
-                              <line x1={x} y1={highY} x2={x} y2={lowY} className={isUp ? "wick up" : "wick down"} />
-                              <rect
-                                x={x - candleWidth / 2}
-                                y={topY}
-                                width={candleWidth}
-                                height={bodyHeight}
-                                className={isUp ? "candle up" : "candle down"}
-                              />
-                            </g>
-                          );
-                        })
-                      : null}
-
+                    {chartType === "candlestick" ? candles.map((candle, index) => {
+                      const x = chartMetrics.xFor(index);
+                      const openY = chartMetrics.yForPrice(candle.open);
+                      const closeY = chartMetrics.yForPrice(candle.close);
+                      const highY = chartMetrics.yForPrice(candle.high);
+                      const lowY = chartMetrics.yForPrice(candle.low);
+                      const candleWidth = Math.max(2, chartMetrics.plotWidth / Math.max(candles.length, 90));
+                      const topY = Math.min(openY, closeY);
+                      const bodyHeight = Math.max(1, Math.abs(closeY - openY));
+                      const isUp = candle.close >= candle.open;
+                      return (
+                        <g key={candle.start_time}>
+                          <line x1={x} y1={highY} x2={x} y2={lowY} className={isUp ? "wick up" : "wick down"} />
+                          <rect x={x - candleWidth / 2} y={topY} width={candleWidth} height={bodyHeight} className={isUp ? "candle up" : "candle down"} />
+                        </g>
+                      );
+                    }) : null}
                     {showMA ? <path d={maPath} className="line-ma" /> : null}
                     {showEMA ? <path d={emaPath} className="line-ema" /> : null}
-
                     {hovered && hoverIndex !== null ? (
                       <>
-                        <line
-                          x1={chartMetrics.xFor(hoverIndex)}
-                          y1={chartMetrics.top}
-                          x2={chartMetrics.xFor(hoverIndex)}
-                          y2={chartMetrics.top + chartMetrics.plotHeight}
-                          className="hover-guide"
-                        />
-                        <circle
-                          cx={chartMetrics.xFor(hoverIndex)}
-                          cy={chartMetrics.yForPrice(hovered.close)}
-                          r="4"
-                          className="hover-dot"
-                        />
+                        <line x1={chartMetrics.xFor(hoverIndex)} y1={chartMetrics.top} x2={chartMetrics.xFor(hoverIndex)} y2={chartMetrics.top + chartMetrics.plotHeight} className="hover-guide" />
+                        <circle cx={chartMetrics.xFor(hoverIndex)} cy={chartMetrics.yForPrice(hovered.close)} r="4" className="hover-dot" />
                       </>
                     ) : null}
                   </svg>
@@ -585,19 +531,13 @@ function App() {
                   Horizon
                   <select value={horizon} onChange={(event) => setHorizon(event.target.value as Horizon)}>
                     {horizons.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
+                      <option key={option} value={option}>{option}</option>
                     ))}
                   </select>
                 </label>
 
                 <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={includeDebug}
-                    onChange={(event) => setIncludeDebug(event.target.checked)}
-                  />
+                  <input type="checkbox" checked={includeDebug} onChange={(event) => setIncludeDebug(event.target.checked)} />
                   Include debug metadata
                 </label>
 
@@ -627,8 +567,7 @@ function App() {
                     <button type="button" onClick={() => setSymbol(asset.symbol)} className="watch-item">
                       <span>{asset.symbol}</span>
                       <span className={asset.changePct >= 0 ? "up" : "down"}>
-                        {asset.changePct >= 0 ? "+" : ""}
-                        {asset.changePct.toFixed(2)}%
+                        {asset.changePct >= 0 ? "+" : ""}{asset.changePct.toFixed(2)}%
                       </span>
                     </button>
                   </li>
@@ -637,7 +576,61 @@ function App() {
             </section>
           </aside>
         </main>
-      )}
+      ) : null}
+
+      {view === "prediction" ? (
+        <main className="prediction-page">
+          <section className="prediction-card">
+            <h2>Prediction Model</h2>
+            <p>Run the model directly with your selected symbol and horizon.</p>
+            <form className="prediction-form" onSubmit={handleSubmit}>
+              <label>
+                Symbol
+                <select value={symbol} onChange={(event) => setSymbol(event.target.value as Symbol)}>
+                  {symbols.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Horizon
+                <select value={horizon} onChange={(event) => setHorizon(event.target.value as Horizon)}>
+                  {horizons.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="checkbox-row">
+                <input type="checkbox" checked={includeDebug} onChange={(event) => setIncludeDebug(event.target.checked)} />
+                Include debug metadata
+              </label>
+
+              <button type="submit" className="action" disabled={loading}>
+                {loading ? "Calculating..." : "Run Prediction"}
+              </button>
+            </form>
+            {error ? <p className="error">{error}</p> : null}
+          </section>
+
+          <section className="prediction-card">
+            <h3>Latest Model Output</h3>
+            {result ? (
+              <div className="result-box">
+                <p><strong>Symbol:</strong> {result.symbol}</p>
+                <p><strong>Direction:</strong> {result.direction.toUpperCase()}</p>
+                <p><strong>Confidence:</strong> {confidenceLabel}</p>
+                <p><strong>Predicted Close:</strong> {projectedLabel}</p>
+                <p><strong>Model:</strong> {result.model_version}</p>
+                <p><strong>Generated:</strong> {new Date(result.generated_at).toLocaleString()}</p>
+              </div>
+            ) : (
+              <p className="muted">No model output yet. Run a prediction.</p>
+            )}
+          </section>
+        </main>
+      ) : null}
     </div>
   );
 }
