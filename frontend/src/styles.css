@@ -72,12 +72,145 @@ a {
   padding: 18px 10px 0;
 }
 
+.home-layout {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 18px;
+  padding: 18px 10px 0;
+}
+
+.home-hero {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 18px;
+  align-self: start;
+}
+
+.home-hero h1 {
+  margin: 0;
+  font-size: 1.8rem;
+}
+
+.home-hero p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.home-stats {
+  margin-top: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.home-stats div {
+  border: 1px solid #e3e9e3;
+  background: #fcfefc;
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.home-stats .label {
+  color: #708070;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.search-input {
+  margin-top: 12px;
+  width: 100%;
+  min-height: 42px;
+  border-radius: 10px;
+  border: 1px solid #dbe5db;
+  padding: 0 12px;
+  font: inherit;
+}
+
+.card-like {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 12px;
+}
+
+.home-list .list-head {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #7a877a;
+  padding: 8px 10px;
+  border-bottom: 1px solid #edf2ed;
+  font-weight: 700;
+}
+
+.home-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 74vh;
+  overflow: auto;
+}
+
+.home-list li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border-bottom: 1px solid #f0f4f0;
+}
+
+.home-list .sym {
+  font-weight: 700;
+}
+
+.open-btn {
+  border: 1px solid #d1ded1;
+  border-radius: 999px;
+  background: #f8fcf8;
+  color: #2f633f;
+  font-size: 0.76rem;
+  font-weight: 800;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.open-btn:hover {
+  background: rgba(0, 200, 83, 0.12);
+  border-color: rgba(0, 200, 83, 0.3);
+}
+
 .rh-main {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 18px;
   box-shadow: var(--shadow);
   padding: 20px;
+}
+
+.asset-top-row {
+  margin-bottom: 10px;
+}
+
+.back-btn {
+  border: 1px solid #d8e3d8;
+  background: #f8fbf8;
+  color: #466446;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.8rem;
+  padding: 7px 12px;
+  cursor: pointer;
 }
 
 .rh-price-header {
@@ -400,6 +533,10 @@ select {
 }
 
 @media (max-width: 1100px) {
+  .home-layout {
+    grid-template-columns: 1fr;
+  }
+
   .rh-layout {
     grid-template-columns: 1fr;
   }
