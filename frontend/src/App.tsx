@@ -65,6 +65,14 @@ function linePath(values: Array<number | null>, xAt: (i: number) => number, yAt:
   return path;
 }
 
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: value >= 100 ? 2 : 4,
+  }).format(value);
+}
+
 function App() {
   const [symbols, setSymbols] = useState<Symbol[]>(fallbackSymbols);
   const [symbol, setSymbol] = useState<Symbol>("BTC-USD");
@@ -75,16 +83,27 @@ function App() {
   const [symbolsError, setSymbolsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PredictionResponse | null>(null);
-  const [chartType, setChartType] = useState<ChartType>("candlestick");
+
+  const [chartType, setChartType] = useState<ChartType>("line");
   const [range, setRange] = useState<RangeKey>("1W");
-  const [showMA, setShowMA] = useState(true);
-  const [showEMA, setShowEMA] = useState(false);
-  const [showVolumeArea, setShowVolumeArea] = useState(true);
+  const [showMA, setShowMA] = useState(false);
+  const [showEMA, setShowEMA] = useState(true);
+  const [showVolumeArea, setShowVolumeArea] = useState(false);
   const [candles, setCandles] = useState<CandlePoint[]>([]);
   const [candlesLoading, setCandlesLoading] = useState(false);
   const [candlesError, setCandlesError] = useState<string | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const chartRef = useRef<SVGSVGElement | null>(null);
+
+  const closes = useMemo(() => candles.map((candle) => candle.close), [candles]);
+  const ma20 = useMemo(() => movingAverage(closes, 20), [closes]);
+  const ema50 = useMemo(() => exponentialMovingAverage(closes, 50), [closes]);
+  const hovered = hoverIndex !== null ? candles[hoverIndex] : null;
+
+  const latestPrice = useMemo(() => (candles.length > 0 ? candles[candles.length - 1].close : null), [candles]);
+  const firstPrice = useMemo(() => (candles.length > 0 ? candles[0].open : null), [candles]);
+  const priceDelta = latestPrice !== null && firstPrice !== null ? latestPrice - firstPrice : null;
+  const priceDeltaPct = latestPrice !== null && firstPrice !== null && firstPrice !== 0 ? (priceDelta! / firstPrice) * 100 : null;
 
   const confidenceLabel = useMemo(() => {
     if (!result) return "-";
@@ -93,12 +112,21 @@ function App() {
 
   const projectedLabel = useMemo(() => {
     if (!result) return "-";
-    return result.predicted_close.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    return formatCurrency(result.predicted_close);
   }, [result]);
-  const closes = useMemo(() => candles.map((candle) => candle.close), [candles]);
-  const ma20 = useMemo(() => movingAverage(closes, 20), [closes]);
-  const ema50 = useMemo(() => exponentialMovingAverage(closes, 50), [closes]);
-  const hovered = hoverIndex !== null ? candles[hoverIndex] : null;
+
+  const watchlist = useMemo(
+    () =>
+      symbols.slice(0, 12).map((asset) => {
+        const score = asset.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        const pseudoMove = ((score % 220) - 110) / 10;
+        return {
+          symbol: asset,
+          changePct: pseudoMove,
+        };
+      }),
+    [symbols],
+  );
 
   useEffect(() => {
     let active = true;
@@ -164,11 +192,11 @@ function App() {
 
   const chartMetrics = useMemo(() => {
     const width = 980;
-    const height = 460;
-    const left = 58;
-    const right = 18;
-    const top = 20;
-    const bottom = showVolumeArea ? 112 : 36;
+    const height = 420;
+    const left = 16;
+    const right = 16;
+    const top = 14;
+    const bottom = showVolumeArea ? 90 : 20;
     const plotWidth = width - left - right;
     const plotHeight = height - top - bottom;
 
@@ -186,8 +214,8 @@ function App() {
     const priceMax = maxBase + pad;
     const priceRange = Math.max(priceMax - priceMin, 1e-6);
     const maxVolume = Math.max(...candles.map((candle) => candle.volume), 1);
-    const volumeTop = height - 92;
-    const volumeHeight = 64;
+    const volumeTop = height - 72;
+    const volumeHeight = 58;
 
     const xFor = (index: number) => {
       if (candles.length <= 1) return left + plotWidth / 2;
@@ -200,9 +228,7 @@ function App() {
       width,
       height,
       left,
-      right,
       top,
-      bottom,
       plotWidth,
       plotHeight,
       priceMin,
@@ -212,14 +238,10 @@ function App() {
       xFor,
       yForPrice,
       yForVolume,
-      maxVolume,
     };
   }, [candles, ma20, ema50, showEMA, showMA, showVolumeArea]);
 
-  const closePath = useMemo(
-    () => linePath(closes, chartMetrics.xFor, chartMetrics.yForPrice),
-    [closes, chartMetrics],
-  );
+  const closePath = useMemo(() => linePath(closes, chartMetrics.xFor, chartMetrics.yForPrice), [closes, chartMetrics]);
   const maPath = useMemo(() => linePath(ma20, chartMetrics.xFor, chartMetrics.yForPrice), [ma20, chartMetrics]);
   const emaPath = useMemo(() => linePath(ema50, chartMetrics.xFor, chartMetrics.yForPrice), [ema50, chartMetrics]);
 
@@ -265,254 +287,242 @@ function App() {
   }
 
   return (
-    <main className="page-shell">
-      <section className="hero">
-        <p className="eyebrow">Prediction Platform</p>
-        <h1>Short-Horizon Crypto Forecasts</h1>
-        <p className="subtext">
-          Generate directional and price forecasts from the backend API and inspect confidence in a clean,
-          production-ready interface.
-        </p>
-        <div className="hero-chips">
-          <span>Live API Contract</span>
-          <span>Multi-Horizon</span>
-          <span>Risk-Aware Roadmap</span>
-        </div>
-      </section>
+    <div className="rh-app">
+      <header className="rh-topbar">
+        <div className="brand">Lapse Markets</div>
+        <nav className="rh-nav">
+          <a>Investing</a>
+          <a>Charting</a>
+          <a>Predictions</a>
+        </nav>
+      </header>
 
-      <section className="layout-grid">
-        <article className="card request-card">
-          <h2>Request Prediction</h2>
-          <form className="grid" onSubmit={handleSubmit}>
-            <label>
-              Symbol
-              <select value={symbol} onChange={(e) => setSymbol(e.target.value as Symbol)}>
-                {symbols.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {symbolsLoading ? <p className="muted">Loading tradable USD symbols...</p> : null}
-            {symbolsError ? <p className="error">{symbolsError}</p> : null}
-
-            <label>
-              Horizon
-              <select value={horizon} onChange={(e) => setHorizon(e.target.value as Horizon)}>
-                {horizons.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="checkbox-row">
-              <input type="checkbox" checked={includeDebug} onChange={(e) => setIncludeDebug(e.target.checked)} />
-              Include debug metadata
-            </label>
-
-            <button type="submit" disabled={loading}>
-              {loading ? "Calculating..." : "Generate Forecast"}
-            </button>
-          </form>
-        </article>
-
-        <article className={`card results ${result ? "panel-enter" : ""}`}>
-          <h2>Prediction Result</h2>
-          {error ? <p className="error">{error}</p> : null}
-          {!error && !result ? <p className="muted">No prediction yet. Submit a request to see results.</p> : null}
-
-          {result ? (
-            <>
-              <div className={`direction-banner ${result.direction}`}>
-                {result.direction === "up" ? "Bullish Signal" : "Bearish Signal"}
+      <main className="rh-layout">
+        <section className="rh-main">
+          <div className="rh-price-header">
+            <div>
+              <h1>{symbol}</h1>
+              <div className="price-row">
+                <span className="price">{latestPrice !== null ? formatCurrency(latestPrice) : "--"}</span>
+                <span className={priceDelta !== null && priceDelta >= 0 ? "delta up" : "delta down"}>
+                  {priceDelta !== null ? `${priceDelta >= 0 ? "+" : ""}${priceDelta.toFixed(2)}` : "--"}
+                  {priceDeltaPct !== null ? ` (${priceDeltaPct >= 0 ? "+" : ""}${priceDeltaPct.toFixed(2)}%)` : ""}
+                </span>
               </div>
-              <dl>
-                <div>
-                  <dt>Direction</dt>
-                  <dd className={result.direction === "up" ? "up" : "down"}>{result.direction.toUpperCase()}</dd>
-                </div>
-                <div>
-                  <dt>Confidence</dt>
-                  <dd>{confidenceLabel}</dd>
-                </div>
-                <div>
-                  <dt>Predicted Close</dt>
-                  <dd>{projectedLabel}</dd>
-                </div>
-                <div>
-                  <dt>Model Version</dt>
-                  <dd>{result.model_version}</dd>
-                </div>
-                <div>
-                  <dt>Generated At</dt>
-                  <dd>{new Date(result.generated_at).toLocaleString()}</dd>
-                </div>
-              </dl>
+            </div>
+            <div className="symbol-control">
+              <label>
+                Symbol
+                <select value={symbol} onChange={(event) => setSymbol(event.target.value as Symbol)}>
+                  {symbols.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div className="chart-actions">
+            <div className="range-buttons">
+              {rangeKeys.map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={key === range ? "pill active" : "pill"}
+                  onClick={() => setRange(key)}
+                >
+                  {key}
+                </button>
+              ))}
+            </div>
+            <div className="tool-buttons">
+              <button
+                type="button"
+                className={chartType === "line" ? "pill active" : "pill"}
+                onClick={() => setChartType("line")}
+              >
+                Line
+              </button>
+              <button
+                type="button"
+                className={chartType === "candlestick" ? "pill active" : "pill"}
+                onClick={() => setChartType("candlestick")}
+              >
+                Candles
+              </button>
+            </div>
+          </div>
+
+          <div className="indicator-row">
+            <label className="indicator-switch">
+              <input type="checkbox" checked={showMA} onChange={(event) => setShowMA(event.target.checked)} />
+              MA
+            </label>
+            <label className="indicator-switch">
+              <input type="checkbox" checked={showEMA} onChange={(event) => setShowEMA(event.target.checked)} />
+              EMA
+            </label>
+            <label className="indicator-switch">
+              <input type="checkbox" checked={showVolumeArea} onChange={(event) => setShowVolumeArea(event.target.checked)} />
+              VA
+            </label>
+          </div>
+
+          {symbolsLoading ? <p className="muted">Loading tradable USD symbols...</p> : null}
+          {symbolsError ? <p className="error">{symbolsError}</p> : null}
+          {candlesLoading ? <p className="muted">Loading chart data...</p> : null}
+          {candlesError ? <p className="error">{candlesError}</p> : null}
+
+          {!candlesLoading && !candlesError && candles.length > 0 ? (
+            <>
+              <div className="rh-chart-shell">
+                <svg
+                  ref={chartRef}
+                  viewBox={`0 0 ${chartMetrics.width} ${chartMetrics.height}`}
+                  className="rh-chart"
+                  role="img"
+                  aria-label={`${symbol} chart`}
+                  onMouseMove={(event) => handleChartMove(event.clientX)}
+                  onMouseLeave={() => setHoverIndex(null)}
+                  onTouchMove={(event) => {
+                    const touch = event.touches[0];
+                    if (touch) handleChartMove(touch.clientX);
+                  }}
+                >
+                  {showVolumeArea && volumeAreaPath ? <path d={volumeAreaPath} className="volume-area" /> : null}
+
+                  {chartType === "line" ? <path d={closePath} className="close-line" /> : null}
+
+                  {chartType === "candlestick"
+                    ? candles.map((candle, index) => {
+                        const x = chartMetrics.xFor(index);
+                        const openY = chartMetrics.yForPrice(candle.open);
+                        const closeY = chartMetrics.yForPrice(candle.close);
+                        const highY = chartMetrics.yForPrice(candle.high);
+                        const lowY = chartMetrics.yForPrice(candle.low);
+                        const candleWidth = Math.max(2, chartMetrics.plotWidth / Math.max(candles.length, 90));
+                        const topY = Math.min(openY, closeY);
+                        const bodyHeight = Math.max(1, Math.abs(closeY - openY));
+                        const isUp = candle.close >= candle.open;
+                        return (
+                          <g key={candle.start_time}>
+                            <line x1={x} y1={highY} x2={x} y2={lowY} className={isUp ? "wick up" : "wick down"} />
+                            <rect
+                              x={x - candleWidth / 2}
+                              y={topY}
+                              width={candleWidth}
+                              height={bodyHeight}
+                              className={isUp ? "candle up" : "candle down"}
+                            />
+                          </g>
+                        );
+                      })
+                    : null}
+
+                  {showMA ? <path d={maPath} className="line-ma" /> : null}
+                  {showEMA ? <path d={emaPath} className="line-ema" /> : null}
+
+                  {hovered && hoverIndex !== null ? (
+                    <>
+                      <line
+                        x1={chartMetrics.xFor(hoverIndex)}
+                        y1={chartMetrics.top}
+                        x2={chartMetrics.xFor(hoverIndex)}
+                        y2={chartMetrics.top + chartMetrics.plotHeight}
+                        className="hover-guide"
+                      />
+                      <circle
+                        cx={chartMetrics.xFor(hoverIndex)}
+                        cy={chartMetrics.yForPrice(hovered.close)}
+                        r="4"
+                        className="hover-dot"
+                      />
+                    </>
+                  ) : null}
+                </svg>
+              </div>
+
+              <div className="hover-bar">
+                {hovered ? (
+                  <>
+                    <span>{new Date(hovered.start_time * 1000).toLocaleString()}</span>
+                    <span>O {hovered.open.toFixed(2)}</span>
+                    <span>H {hovered.high.toFixed(2)}</span>
+                    <span>L {hovered.low.toFixed(2)}</span>
+                    <span>C {hovered.close.toFixed(2)}</span>
+                    <span>V {hovered.volume.toFixed(2)}</span>
+                  </>
+                ) : (
+                  <span>Hover chart to inspect OHLCV values</span>
+                )}
+              </div>
             </>
           ) : null}
-        </article>
-      </section>
+        </section>
 
-      <section className="card chart-card">
-        <div className="chart-header">
-          <h2>{symbol} Market Chart</h2>
-          <div className="chart-range-group">
-            {rangeKeys.map((key) => (
-              <button
-                key={key}
-                type="button"
-                className={key === range ? "chip active" : "chip"}
-                onClick={() => setRange(key)}
-              >
-                {key}
-              </button>
-            ))}
-          </div>
-        </div>
+        <aside className="rh-side">
+          <section className="side-card">
+            <h3>Prediction</h3>
+            <form className="prediction-form" onSubmit={handleSubmit}>
+              <label>
+                Horizon
+                <select value={horizon} onChange={(event) => setHorizon(event.target.value as Horizon)}>
+                  {horizons.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-        <div className="chart-controls">
-          <div className="toggle-group">
-            <button
-              type="button"
-              className={chartType === "candlestick" ? "chip active" : "chip"}
-              onClick={() => setChartType("candlestick")}
-            >
-              Candlestick
-            </button>
-            <button
-              type="button"
-              className={chartType === "line" ? "chip active" : "chip"}
-              onClick={() => setChartType("line")}
-            >
-              Line
-            </button>
-          </div>
-          <div className="toggle-group">
-            <label className="switch">
-              <input type="checkbox" checked={showMA} onChange={(e) => setShowMA(e.target.checked)} />
-              <span>MA (20)</span>
-            </label>
-            <label className="switch">
-              <input type="checkbox" checked={showEMA} onChange={(e) => setShowEMA(e.target.checked)} />
-              <span>EMA (50)</span>
-            </label>
-            <label className="switch">
-              <input
-                type="checkbox"
-                checked={showVolumeArea}
-                onChange={(e) => setShowVolumeArea(e.target.checked)}
-              />
-              <span>VA (Volume Area)</span>
-            </label>
-          </div>
-        </div>
-
-        {candlesLoading ? <p className="muted">Loading chart data...</p> : null}
-        {candlesError ? <p className="error">{candlesError}</p> : null}
-
-        {!candlesLoading && !candlesError && candles.length > 0 ? (
-          <>
-            <div className="chart-meta">
-              <span>Points: {candles.length}</span>
-              <span>
-                Range: {chartMetrics.priceMin.toFixed(2)} - {chartMetrics.priceMax.toFixed(2)}
-              </span>
-              <span>Granularity: {rangeConfig[range].granularity}</span>
-            </div>
-            <div className="chart-canvas-wrap">
-              <svg
-                ref={chartRef}
-                viewBox={`0 0 ${chartMetrics.width} ${chartMetrics.height}`}
-                className="chart-canvas"
-                role="img"
-                aria-label={`${symbol} price chart`}
-                onMouseMove={(event) => handleChartMove(event.clientX)}
-                onMouseLeave={() => setHoverIndex(null)}
-                onTouchMove={(event) => {
-                  const touch = event.touches[0];
-                  if (touch) handleChartMove(touch.clientX);
-                }}
-              >
-                <rect
-                  x={chartMetrics.left}
-                  y={chartMetrics.top}
-                  width={chartMetrics.plotWidth}
-                  height={chartMetrics.plotHeight}
-                  className="chart-plot-bg"
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={includeDebug}
+                  onChange={(event) => setIncludeDebug(event.target.checked)}
                 />
-                {[0, 1, 2, 3, 4].map((tick) => {
-                  const y = chartMetrics.top + (tick / 4) * chartMetrics.plotHeight;
-                  return <line key={tick} x1={chartMetrics.left} y1={y} x2={chartMetrics.left + chartMetrics.plotWidth} y2={y} className="chart-grid" />;
-                })}
-                {showVolumeArea && volumeAreaPath ? <path d={volumeAreaPath} className="volume-area" /> : null}
-                {chartType === "line" ? <path d={closePath} className="price-line" /> : null}
-                {chartType === "candlestick"
-                  ? candles.map((candle, index) => {
-                      const x = chartMetrics.xFor(index);
-                      const openY = chartMetrics.yForPrice(candle.open);
-                      const closeY = chartMetrics.yForPrice(candle.close);
-                      const highY = chartMetrics.yForPrice(candle.high);
-                      const lowY = chartMetrics.yForPrice(candle.low);
-                      const candleWidth = Math.max(2, chartMetrics.plotWidth / Math.max(candles.length, 80));
-                      const topY = Math.min(openY, closeY);
-                      const bodyHeight = Math.max(1, Math.abs(closeY - openY));
-                      const isUp = candle.close >= candle.open;
-                      return (
-                        <g key={candle.start_time}>
-                          <line x1={x} y1={highY} x2={x} y2={lowY} className={isUp ? "wick up" : "wick down"} />
-                          <rect
-                            x={x - candleWidth / 2}
-                            y={topY}
-                            width={candleWidth}
-                            height={bodyHeight}
-                            className={isUp ? "candle up" : "candle down"}
-                          />
-                        </g>
-                      );
-                    })
-                  : null}
-                {showMA ? <path d={maPath} className="indicator-ma" /> : null}
-                {showEMA ? <path d={emaPath} className="indicator-ema" /> : null}
-                {hovered && hoverIndex !== null ? (
-                  <>
-                    <line
-                      x1={chartMetrics.xFor(hoverIndex)}
-                      y1={chartMetrics.top}
-                      x2={chartMetrics.xFor(hoverIndex)}
-                      y2={chartMetrics.top + chartMetrics.plotHeight}
-                      className="hover-line"
-                    />
-                    <circle
-                      cx={chartMetrics.xFor(hoverIndex)}
-                      cy={chartMetrics.yForPrice(hovered.close)}
-                      r="4"
-                      className="hover-point"
-                    />
-                  </>
-                ) : null}
-              </svg>
-            </div>
-            <div className="chart-inspector">
-              {hovered ? (
-                <>
-                  <span>{new Date(hovered.start_time * 1000).toLocaleString()}</span>
-                  <span>O: {hovered.open.toFixed(2)}</span>
-                  <span>H: {hovered.high.toFixed(2)}</span>
-                  <span>L: {hovered.low.toFixed(2)}</span>
-                  <span>C: {hovered.close.toFixed(2)}</span>
-                  <span>V: {hovered.volume.toFixed(2)}</span>
-                </>
-              ) : (
-                <span>Hover chart to inspect candle values.</span>
-              )}
-            </div>
-          </>
-        ) : null}
-      </section>
-    </main>
+                Include debug metadata
+              </label>
+
+              <button type="submit" className="action" disabled={loading}>
+                {loading ? "Calculating..." : "Generate Forecast"}
+              </button>
+            </form>
+
+            {error ? <p className="error">{error}</p> : null}
+            {result ? (
+              <div className="result-box">
+                <p className="signal">{result.direction === "up" ? "Bullish" : "Bearish"}</p>
+                <p>Confidence: {confidenceLabel}</p>
+                <p>Predicted Close: {projectedLabel}</p>
+                <p>Model: {result.model_version}</p>
+              </div>
+            ) : (
+              <p className="muted">Run a prediction to see model output.</p>
+            )}
+          </section>
+
+          <section className="side-card watchlist">
+            <h3>Watchlist</h3>
+            <ul>
+              {watchlist.map((asset) => (
+                <li key={asset.symbol}>
+                  <button type="button" onClick={() => setSymbol(asset.symbol)} className="watch-item">
+                    <span>{asset.symbol}</span>
+                    <span className={asset.changePct >= 0 ? "up" : "down"}>
+                      {asset.changePct >= 0 ? "+" : ""}
+                      {asset.changePct.toFixed(2)}%
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </aside>
+      </main>
+    </div>
   );
 }
 
