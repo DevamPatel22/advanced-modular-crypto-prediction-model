@@ -31,3 +31,22 @@ export interface MarketSymbolsResponse {
   symbols: MarketSymbol[];
   source: string;
 }
+
+export type CandleGranularity = "1m" | "5m" | "15m" | "1h" | "6h" | "1d";
+
+export interface CandlePoint {
+  start_time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface CandleSeriesResponse {
+  symbol: string;
+  granularity: CandleGranularity;
+  count: number;
+  source: string;
+  candles: CandlePoint[];
+}

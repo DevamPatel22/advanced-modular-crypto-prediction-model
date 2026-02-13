@@ -124,7 +124,7 @@ label {
 }
 
 select,
-button {
+.grid button {
   min-height: 44px;
   border-radius: 10px;
   border: 1px solid #bfd0e4;
@@ -143,7 +143,7 @@ select:focus {
   outline: none;
 }
 
-button {
+.grid button {
   cursor: pointer;
   border: 0;
   color: white;
@@ -153,12 +153,12 @@ button {
   transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
 }
 
-button:hover:not(:disabled) {
+.grid button:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 10px 20px rgba(18, 88, 173, 0.22);
 }
 
-button:disabled {
+.grid button:disabled {
   opacity: 0.7;
   cursor: not-allowed;
 }
@@ -243,6 +243,167 @@ button:disabled {
   animation: glow-in 0.45s ease-out;
 }
 
+.chart-card {
+  animation: rise-in 0.65s ease-out 0.22s both;
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.chart-range-group,
+.toggle-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  border: 1px solid #bfcee3;
+  background: #f8fbff;
+  color: #284969;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chip.active {
+  color: white;
+  border-color: #1a4f95;
+  background: linear-gradient(135deg, #1b5bad, #0f766e);
+}
+
+.chart-controls {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #d1dded;
+  background: #f8fbff;
+  font-weight: 600;
+  color: #32506f;
+}
+
+.switch input {
+  margin: 0;
+}
+
+.chart-meta {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #355775;
+  margin-bottom: 8px;
+}
+
+.chart-canvas-wrap {
+  border: 1px solid #d1dced;
+  border-radius: 14px;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(246, 250, 255, 0.95), rgba(243, 252, 249, 0.95));
+}
+
+.chart-canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.chart-plot-bg {
+  fill: rgba(255, 255, 255, 0.35);
+}
+
+.chart-grid {
+  stroke: #d8e4f3;
+  stroke-width: 1;
+}
+
+.price-line {
+  fill: none;
+  stroke: #0f766e;
+  stroke-width: 2.2;
+}
+
+.wick {
+  stroke-width: 1;
+}
+
+.wick.up {
+  stroke: #0d8b67;
+}
+
+.wick.down {
+  stroke: #b13c57;
+}
+
+.candle {
+  stroke-width: 0.5;
+}
+
+.candle.up {
+  fill: rgba(13, 139, 103, 0.45);
+  stroke: #0d8b67;
+}
+
+.candle.down {
+  fill: rgba(177, 60, 87, 0.4);
+  stroke: #b13c57;
+}
+
+.indicator-ma {
+  fill: none;
+  stroke: #0b4ea2;
+  stroke-width: 1.8;
+  stroke-dasharray: 4 4;
+}
+
+.indicator-ema {
+  fill: none;
+  stroke: #8d4fce;
+  stroke-width: 1.7;
+}
+
+.volume-area {
+  fill: rgba(31, 122, 140, 0.22);
+  stroke: rgba(31, 122, 140, 0.45);
+  stroke-width: 1;
+}
+
+.hover-line {
+  stroke: #3c5a77;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.hover-point {
+  fill: #0b4ea2;
+}
+
+.chart-inspector {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #314c67;
+}
+
 @keyframes rise-in {
   from {
     opacity: 0;
@@ -295,5 +456,10 @@ button:disabled {
   .results dd {
     max-width: 50%;
     font-size: 0.92rem;
+  }
+
+  .chart-header {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

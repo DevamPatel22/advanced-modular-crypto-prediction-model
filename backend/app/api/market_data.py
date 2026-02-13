@@ -13,7 +13,7 @@ router = APIRouter(prefix="/market-data", tags=["market-data"])
 async def candles(
     symbol: str = Query(..., min_length=5, max_length=24, pattern=r"^[A-Z0-9]+-[A-Z0-9]+$"),
     granularity: Granularity = Query(default="1h"),
-    limit: int = Query(default=200, ge=1, le=300),
+    limit: int = Query(default=200, ge=1, le=2000),
     refresh: bool = Query(default=False),
 ) -> CandleSeriesResponse:
     try:
@@ -59,4 +59,3 @@ async def ticker_stream(
         return
     except Exception:
         await websocket.close(code=1011, reason="ticker stream unavailable")
-

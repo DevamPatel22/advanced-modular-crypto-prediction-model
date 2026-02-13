@@ -124,36 +124,53 @@ def _save_candles(symbol: str, granularity: str, candles: list[CandlePoint], sou
 async def _fetch_exchange_candles(symbol: str, granularity: str, limit: int) -> list[CandlePoint]:
     settings = get_settings()
     granularity_seconds = GRANULARITY_TO_SECONDS[granularity]
-    end = int(datetime.now(tz=UTC).timestamp())
-    start = end - (granularity_seconds * min(limit, 300))
     url = f"{settings.market_data_source_base_url}/products/{symbol}/candles"
-    params = {
-        "granularity": granularity_seconds,
-        "start": datetime.fromtimestamp(start, tz=UTC).isoformat(),
-        "end": datetime.fromtimestamp(end, tz=UTC).isoformat(),
-    }
+    end_cursor = int(datetime.now(tz=UTC).timestamp())
+    remaining = max(limit, 1)
+    collected: dict[int, CandlePoint] = {}
+    max_requests = 20
 
     async with httpx.AsyncClient(timeout=15.0) as client:
-        response = await client.get(url, params=params, headers={"Accept": "application/json"})
-        response.raise_for_status()
-        rows = response.json()
+        for _ in range(max_requests):
+            if remaining <= 0:
+                break
+            batch_size = min(remaining, 300)
+            start_cursor = end_cursor - (granularity_seconds * batch_size)
+            params = {
+                "granularity": granularity_seconds,
+                "start": datetime.fromtimestamp(start_cursor, tz=UTC).isoformat(),
+                "end": datetime.fromtimestamp(end_cursor, tz=UTC).isoformat(),
+            }
+            response = await client.get(url, params=params, headers={"Accept": "application/json"})
+            response.raise_for_status()
+            rows = response.json()
+            if not rows:
+                break
 
-    candles = []
-    for row in rows:
-        if not isinstance(row, list) or len(row) < 6:
-            continue
-        candles.append(
-            CandlePoint(
-                start_time=int(row[0]),
-                low=float(row[1]),
-                high=float(row[2]),
-                open=float(row[3]),
-                close=float(row[4]),
-                volume=float(row[5]),
-            )
-        )
+            oldest = end_cursor
+            for row in rows:
+                if not isinstance(row, list) or len(row) < 6:
+                    continue
+                candle = CandlePoint(
+                    start_time=int(row[0]),
+                    low=float(row[1]),
+                    high=float(row[2]),
+                    open=float(row[3]),
+                    close=float(row[4]),
+                    volume=float(row[5]),
+                )
+                collected[candle.start_time] = candle
+                oldest = min(oldest, candle.start_time)
 
-    candles.sort(key=lambda item: item.start_time)
+            remaining = limit - len(collected)
+            if len(rows) < batch_size:
+                break
+            next_end = oldest - granularity_seconds
+            if next_end >= end_cursor:
+                break
+            end_cursor = next_end
+
+    candles = sorted(collected.values(), key=lambda item: item.start_time)
     return candles[-limit:]
 
 
@@ -209,4 +226,3 @@ async def get_ticker(symbol: str) -> TickerResponse:
                 source="sqlite_last_candle",
             )
         raise
-
