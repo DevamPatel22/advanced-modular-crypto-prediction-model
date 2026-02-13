@@ -31,6 +31,9 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - `GET /` root service metadata
 - `GET /api/v1/health` service health status
 - `GET /api/v1/markets/symbols?quote=USD` tradable symbols catalog
+- `GET /api/v1/market-data/candles?symbol=BTC-USD&granularity=1h&limit=200` OHLCV candles
+- `GET /api/v1/market-data/ticker?symbol=BTC-USD` latest ticker
+- `WS /api/v1/market-data/ws/ticker?symbol=BTC-USD` streaming ticker updates
 - `POST /api/v1/predictions` prediction response (stub until model integration)
 
 Example request:

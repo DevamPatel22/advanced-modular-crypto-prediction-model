@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     markets_source_url: str = "https://api.exchange.coinbase.com/products"
     symbol_cache_ttl_seconds: int = 300
+    market_data_source_base_url: str = "https://api.exchange.coinbase.com"
+    market_data_sqlite_path: str = "data/market_data.db"
+    market_data_default_granularity: str = "1h"
+    market_data_default_limit: int = 200
+    ticker_stream_interval_seconds: int = 2
 
     model_config = SettingsConfigDict(
         env_file=".env",
