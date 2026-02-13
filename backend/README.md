@@ -36,6 +36,14 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - `WS /api/v1/market-data/ws/ticker?symbol=BTC-USD` streaming ticker updates
 - `POST /api/v1/predictions` prediction response (stub until model integration)
 
+All prediction and market-data endpoints validate symbols against the US-tradable USD pair universe.
+Symbols outside that universe return `400`.
+
+Background ingestion loop:
+
+- On startup, the service can continuously refresh candles for US-tradable USD symbols.
+- Controlled by `INGESTION_*` env variables in `backend/.env`.
+
 Example request:
 
 ```json

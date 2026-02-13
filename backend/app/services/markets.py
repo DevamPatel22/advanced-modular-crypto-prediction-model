@@ -92,3 +92,8 @@ async def fetch_symbols_by_quote(quote: str, limit: int = 300) -> list[MarketSym
     )
     return symbols[:limit]
 
+
+async def is_tradable_symbol(symbol: str, quote: str = "USD") -> bool:
+    normalized = symbol.upper().strip()
+    universe = await fetch_symbols_by_quote(quote=quote, limit=2000)
+    return any(item.symbol == normalized for item in universe)

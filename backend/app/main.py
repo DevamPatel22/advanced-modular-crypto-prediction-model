@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +9,7 @@ from app.api.market_data import router as market_data_router
 from app.api.markets import router as markets_router
 from app.api.predictions import router as predictions_router
 from app.config import get_settings
+from app.services.ingestion import run_ingestion_loop
 from app.services.market_data import init_market_data_db
 
 settings = get_settings()
@@ -16,7 +18,20 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_market_data_db()
-    yield
+    stop_event = asyncio.Event()
+    ingestion_task: asyncio.Task[None] | None = None
+    if settings.ingestion_enabled:
+        ingestion_task = asyncio.create_task(run_ingestion_loop(stop_event))
+    try:
+        yield
+    finally:
+        stop_event.set()
+        if ingestion_task is not None:
+            ingestion_task.cancel()
+            try:
+                await ingestion_task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(

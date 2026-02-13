@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { fetchCandles, fetchPrediction, fetchTradableSymbols } from "./lib/api";
+import { fetchCandles, fetchPrediction, fetchTradableSymbols, getApiBaseUrl } from "./lib/api";
 import type {
   CandleGranularity,
   CandlePoint,
@@ -93,6 +93,8 @@ function App() {
   const [candlesLoading, setCandlesLoading] = useState(false);
   const [candlesError, setCandlesError] = useState<string | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [livePrice, setLivePrice] = useState<number | null>(null);
+  const [liveSource, setLiveSource] = useState<string>("historical");
   const chartRef = useRef<SVGSVGElement | null>(null);
 
   const closes = useMemo(() => candles.map((candle) => candle.close), [candles]);
@@ -101,9 +103,11 @@ function App() {
   const hovered = hoverIndex !== null ? candles[hoverIndex] : null;
 
   const latestPrice = useMemo(() => (candles.length > 0 ? candles[candles.length - 1].close : null), [candles]);
+  const displayedPrice = livePrice ?? latestPrice;
   const firstPrice = useMemo(() => (candles.length > 0 ? candles[0].open : null), [candles]);
-  const priceDelta = latestPrice !== null && firstPrice !== null ? latestPrice - firstPrice : null;
-  const priceDeltaPct = latestPrice !== null && firstPrice !== null && firstPrice !== 0 ? (priceDelta! / firstPrice) * 100 : null;
+  const priceDelta = displayedPrice !== null && firstPrice !== null ? displayedPrice - firstPrice : null;
+  const priceDeltaPct =
+    displayedPrice !== null && firstPrice !== null && firstPrice !== 0 ? (priceDelta! / firstPrice) * 100 : null;
 
   const confidenceLabel = useMemo(() => {
     if (!result) return "-";
@@ -189,6 +193,39 @@ function App() {
       active = false;
     };
   }, [symbol, range]);
+
+  useEffect(() => {
+    setLivePrice(null);
+    const apiBase = getApiBaseUrl();
+    const wsBase = apiBase.replace(/^http/i, "ws");
+    const wsUrl = `${wsBase}/api/v1/market-data/ws/ticker?symbol=${encodeURIComponent(symbol)}`;
+    let socket: WebSocket | null = null;
+    try {
+      socket = new WebSocket(wsUrl);
+      socket.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data) as { price?: number; source?: string };
+          if (typeof payload.price === "number") {
+            setLivePrice(payload.price);
+            setLiveSource(payload.source ?? "stream");
+          }
+        } catch {
+          return;
+        }
+      };
+      socket.onerror = () => {
+        setLiveSource("stream_error");
+      };
+    } catch {
+      setLiveSource("stream_error");
+    }
+
+    return () => {
+      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+        socket.close();
+      }
+    };
+  }, [symbol]);
 
   const chartMetrics = useMemo(() => {
     const width = 980;
@@ -303,7 +340,7 @@ function App() {
             <div>
               <h1>{symbol}</h1>
               <div className="price-row">
-                <span className="price">{latestPrice !== null ? formatCurrency(latestPrice) : "--"}</span>
+                <span className="price">{displayedPrice !== null ? formatCurrency(displayedPrice) : "--"}</span>
                 <span className={priceDelta !== null && priceDelta >= 0 ? "delta up" : "delta down"}>
                   {priceDelta !== null ? `${priceDelta >= 0 ? "+" : ""}${priceDelta.toFixed(2)}` : "--"}
                   {priceDeltaPct !== null ? ` (${priceDeltaPct >= 0 ? "+" : ""}${priceDeltaPct.toFixed(2)}%)` : ""}
@@ -323,6 +360,7 @@ function App() {
               </label>
             </div>
           </div>
+          <p className="muted">US-tradable pairs loaded: {symbols.length} | Price feed: {liveSource}</p>
 
           <div className="chart-actions">
             <div className="range-buttons">

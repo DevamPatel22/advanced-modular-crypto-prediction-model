@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconn
 from app.config import get_settings
 from app.schemas.market_data import CandleSeriesResponse, Granularity, TickerResponse
 from app.services.market_data import get_candles, get_ticker
+from app.services.markets import is_tradable_symbol
 
 router = APIRouter(prefix="/market-data", tags=["market-data"])
 
@@ -16,6 +17,8 @@ async def candles(
     limit: int = Query(default=200, ge=1, le=2000),
     refresh: bool = Query(default=False),
 ) -> CandleSeriesResponse:
+    if not await is_tradable_symbol(symbol=symbol, quote="USD"):
+        raise HTTPException(status_code=400, detail=f"{symbol.upper()} is not a supported US-tradable USD pair")
     try:
         source, points = await get_candles(symbol=symbol, granularity=granularity, limit=limit, refresh=refresh)
     except ValueError as error:
@@ -36,6 +39,8 @@ async def candles(
 async def ticker(
     symbol: str = Query(..., min_length=5, max_length=24, pattern=r"^[A-Z0-9]+-[A-Z0-9]+$"),
 ) -> TickerResponse:
+    if not await is_tradable_symbol(symbol=symbol, quote="USD"):
+        raise HTTPException(status_code=400, detail=f"{symbol.upper()} is not a supported US-tradable USD pair")
     try:
         return await get_ticker(symbol)
     except Exception as error:
@@ -47,6 +52,10 @@ async def ticker_stream(
     websocket: WebSocket,
     symbol: str = Query(..., min_length=5, max_length=24, pattern=r"^[A-Z0-9]+-[A-Z0-9]+$"),
 ):
+    if not await is_tradable_symbol(symbol=symbol, quote="USD"):
+        await websocket.accept()
+        await websocket.close(code=1008, reason="unsupported_symbol")
+        return
     settings = get_settings()
     interval = max(settings.ticker_stream_interval_seconds, 1)
     await websocket.accept()

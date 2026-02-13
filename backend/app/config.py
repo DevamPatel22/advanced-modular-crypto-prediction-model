@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     market_data_default_granularity: str = "1h"
     market_data_default_limit: int = 200
     ticker_stream_interval_seconds: int = 2
+    ingestion_enabled: bool = True
+    ingestion_quote_currency: str = "USD"
+    ingestion_symbol_limit: int = 120
+    ingestion_granularities: str = "1m,1h,1d"
+    ingestion_limit_per_symbol: int = 200
+    ingestion_cycle_seconds: int = 600
 
     model_config = SettingsConfigDict(
         env_file=".env",
