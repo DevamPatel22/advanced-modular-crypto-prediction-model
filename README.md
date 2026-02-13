@@ -15,11 +15,15 @@ Build a reliable, scalable prediction platform that can evolve from MVP analytic
 
 ## Current Status
 
-- Repository scaffolding completed
-- Backend service bootstrap completed
-- Health endpoint available at `GET /api/v1/health`
-- Prediction contract available at `POST /api/v1/predictions` (stub inference)
-- Product scope and milestone roadmap documented
+- US-tradable USD crypto universe endpoint and validation in place
+- Market data APIs available (candles, ticker, websocket ticker stream)
+- Background ingestion loop for tradable symbols enabled via env config
+- Interactive frontend with:
+  - markets homepage (search by symbol or coin name)
+  - asset detail page (line/candlestick, ranges, MA/EMA/VA toggles)
+  - dedicated prediction model tab
+- Prediction response includes risk-aware return ranges and risk score/level
+- Baseline model training/evaluation pipeline and report generator added
 
 ## Repository Structure
 
@@ -62,14 +66,12 @@ Then open `http://localhost:5173`.
 
 ## Product Roadmap
 
-1. Backend foundation and configuration
-2. Data ingestion and preprocessing pipeline
-3. Baseline classification/regression models
-4. Stacking ensemble (base + meta model)
-5. Prediction API contracts and inference service
-6. React frontend prediction workflow
-7. Evaluation dashboard and model diagnostics
-8. Testing, CI/CD, and deployment hardening
+1. Replace prediction stub with trained artifact inference per horizon
+2. Improve feature engineering and add model selection workflow
+3. Add horizon-specific calibration + confidence reliability tracking
+4. Introduce alerting and user-level preferences/watchlists
+5. Add auth + role model + audit logging
+6. Expand testing, CI/CD gates, and deployment hardening
 
 ## Engineering Principles
 

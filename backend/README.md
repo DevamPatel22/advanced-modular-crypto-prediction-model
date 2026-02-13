@@ -4,12 +4,14 @@
 
 This service provides the prediction API backend.
 
-Current scope in this milestone:
+Current scope:
 
-- FastAPI application bootstrap
-- environment-based settings loading
-- health endpoint
-- prediction endpoint contract (service stub)
+- FastAPI service with market and prediction APIs
+- US-tradable symbol universe validation (`quote=USD`)
+- market-data retrieval + SQLite caching
+- background ingestion loop for tradable symbols
+- risk-aware prediction range output
+- baseline model training/evaluation CLI
 
 ## Setup
 
@@ -34,7 +36,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - `GET /api/v1/market-data/candles?symbol=BTC-USD&granularity=1h&limit=200` OHLCV candles
 - `GET /api/v1/market-data/ticker?symbol=BTC-USD` latest ticker
 - `WS /api/v1/market-data/ws/ticker?symbol=BTC-USD` streaming ticker updates
-- `POST /api/v1/predictions` prediction response (stub until model integration)
+- `POST /api/v1/predictions` prediction output with risk-aware return range
 
 All prediction and market-data endpoints validate symbols against the US-tradable USD pair universe.
 Symbols outside that universe return `400`.
@@ -68,5 +70,19 @@ Example request:
   "symbol": "BTC-USD",
   "horizon": "1h",
   "include_debug": true
+}
+```
+
+Example response fields (abridged):
+
+```json
+{
+  "direction": "up",
+  "confidence": 0.71,
+  "predicted_close": 123.45,
+  "return_range_min_pct": -4.2,
+  "return_range_max_pct": 6.1,
+  "risk_score": 48.3,
+  "risk_level": "medium"
 }
 ```

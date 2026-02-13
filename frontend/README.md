@@ -16,12 +16,13 @@ Default app URL: `http://localhost:5173`
 
 ## Current Features
 
-- Prediction request form for symbol and horizon
-- Dynamic symbol loader (USD quote pairs from backend markets endpoint)
-- API integration with `POST /api/v1/predictions`
-- Loading, error, and result states
-- Interactive market chart with:
+- Markets homepage listing US-tradable USD crypto pairs
+- Search by symbol or full coin name (case-insensitive, alias-friendly)
+- Asset detail page with:
+  - live price header
   - range switching (`1D`, `1W`, `1M`, `1Y`, `MAX`)
   - chart type switching (candlestick and line)
   - indicator toggles (`MA`, `EMA`, and volume area)
   - hover inspection for OHLCV values
+- Dedicated prediction model tab/page
+- Prediction result UI includes risk-aware return range and risk score/level
