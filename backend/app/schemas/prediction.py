@@ -24,6 +24,10 @@ class PredictionResponse(BaseModel):
     direction: Literal["up", "down"]
     confidence: float = Field(..., ge=0.0, le=1.0)
     predicted_close: float = Field(..., gt=0.0)
+    return_range_min_pct: float = Field(..., description="Expected lower bound return for selected horizon (%)")
+    return_range_max_pct: float = Field(..., description="Expected upper bound return for selected horizon (%)")
+    risk_score: float = Field(..., ge=0.0, le=100.0, description="Risk score on a 0-100 scale")
+    risk_level: Literal["low", "medium", "high"] = Field(..., description="Risk category")
     model_version: str
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     debug: dict[str, str] | None = None

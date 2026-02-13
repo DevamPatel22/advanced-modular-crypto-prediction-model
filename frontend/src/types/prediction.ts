@@ -13,6 +13,10 @@ export interface PredictionResponse {
   direction: "up" | "down";
   confidence: number;
   predicted_close: number;
+  return_range_min_pct: number;
+  return_range_max_pct: number;
+  risk_score: number;
+  risk_level: "low" | "medium" | "high";
   model_version: string;
   generated_at: string;
   debug?: Record<string, string> | null;

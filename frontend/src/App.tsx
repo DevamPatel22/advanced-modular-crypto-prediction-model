@@ -176,6 +176,13 @@ function App() {
     return formatCurrency(result.predicted_close);
   }, [result]);
 
+  const rangeLabel = useMemo(() => {
+    if (!result) return "-";
+    const lo = `${result.return_range_min_pct >= 0 ? "+" : ""}${result.return_range_min_pct.toFixed(2)}%`;
+    const hi = `${result.return_range_max_pct >= 0 ? "+" : ""}${result.return_range_max_pct.toFixed(2)}%`;
+    return `${lo} to ${hi}`;
+  }, [result]);
+
   const watchlist = useMemo(
     () =>
       symbols.slice(0, 12).map((asset) => {
@@ -616,6 +623,11 @@ function App() {
                   <p className="signal">{result.direction === "up" ? "Bullish" : "Bearish"}</p>
                   <p>Confidence: {confidenceLabel}</p>
                   <p>Predicted Close: {projectedLabel}</p>
+                  <p>Expected Range: {rangeLabel}</p>
+                  <p>
+                    Risk: <span className={result.risk_level === "low" ? "up" : result.risk_level === "medium" ? "muted" : "down"}>{result.risk_level.toUpperCase()}</span>{" "}
+                    ({result.risk_score.toFixed(1)}/100)
+                  </p>
                   <p>Model: {result.model_version}</p>
                 </div>
               ) : (
@@ -686,6 +698,8 @@ function App() {
                 <p><strong>Direction:</strong> {result.direction.toUpperCase()}</p>
                 <p><strong>Confidence:</strong> {confidenceLabel}</p>
                 <p><strong>Predicted Close:</strong> {projectedLabel}</p>
+                <p><strong>Expected Range:</strong> {rangeLabel}</p>
+                <p><strong>Risk:</strong> {result.risk_level.toUpperCase()} ({result.risk_score.toFixed(1)}/100)</p>
                 <p><strong>Model:</strong> {result.model_version}</p>
                 <p><strong>Generated:</strong> {new Date(result.generated_at).toLocaleString()}</p>
               </div>
