@@ -44,6 +44,23 @@ Background ingestion loop:
 - On startup, the service can continuously refresh candles for US-tradable USD symbols.
 - Controlled by `INGESTION_*` env variables in `backend/.env`.
 
+## Baseline Accuracy Evaluation
+
+Run baseline training/evaluation for one symbol:
+
+```bash
+python scripts/train_baseline.py --symbol BTC-USD --output reports/baseline_report_btc_usd.json
+```
+
+The report includes per-horizon:
+
+- classification metrics: `accuracy`, `precision`, `recall`, `f1`, `roc_auc`
+- baseline comparison: `baseline_up_accuracy`
+- regression metrics: `mae`, `rmse`, `mape`
+- data notes: selected granularity and step horizon
+
+If a horizon shows `insufficient_data`, ingest more history first and rerun.
+
 Example request:
 
 ```json
