@@ -10,6 +10,44 @@ type RangeKey = (typeof rangeKeys)[number];
 type ChartType = "candlestick" | "line";
 type ViewMode = "home" | "asset" | "prediction";
 
+const coinNameByBase: Record<string, string> = {
+  BTC: "Bitcoin",
+  ETH: "Ethereum",
+  SOL: "Solana",
+  ADA: "Cardano",
+  XRP: "XRP",
+  DOGE: "Dogecoin",
+  AVAX: "Avalanche",
+  DOT: "Polkadot",
+  LINK: "Chainlink",
+  LTC: "Litecoin",
+  BCH: "Bitcoin Cash",
+  UNI: "Uniswap",
+  AAVE: "Aave",
+  ALGO: "Algorand",
+  ATOM: "Cosmos",
+  SHIB: "Shiba Inu",
+  MATIC: "Polygon",
+  XLM: "Stellar",
+  ETC: "Ethereum Classic",
+  NEAR: "NEAR Protocol",
+  FIL: "Filecoin",
+  OP: "Optimism",
+  ARB: "Arbitrum",
+  SUI: "Sui",
+  APT: "Aptos",
+  PEPE: "Pepe",
+};
+
+const coinAliasesByBase: Record<string, string[]> = {
+  BTC: ["bitcoin"],
+  ETH: ["ethereum", "etherium", "eth"],
+  DOGE: ["dogecoin", "doge"],
+  SOL: ["solana"],
+  ADA: ["cardano"],
+  XRP: ["ripple"],
+};
+
 const rangeConfig: Record<RangeKey, { granularity: CandleGranularity; limit: number }> = {
   "1D": { granularity: "5m", limit: 288 },
   "1W": { granularity: "1h", limit: 168 },
@@ -67,6 +105,25 @@ function formatCurrency(value: number): string {
     currency: "USD",
     maximumFractionDigits: value >= 100 ? 2 : 4,
   }).format(value);
+}
+
+function toTitleCase(value: string): string {
+  return value
+    .toLowerCase()
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getCoinMeta(symbol: string): { base: string; quote: string; name: string; searchTokens: string[] } {
+  const [rawBase = symbol, rawQuote = ""] = symbol.split("-");
+  const base = rawBase.toUpperCase();
+  const quote = rawQuote.toUpperCase();
+  const name = coinNameByBase[base] ?? toTitleCase(base);
+  const aliases = coinAliasesByBase[base] ?? [];
+  const searchTokens = [symbol, base, name, ...aliases].map((token) => token.toLowerCase());
+  return { base, quote, name, searchTokens };
 }
 
 function App() {
@@ -133,9 +190,12 @@ function App() {
   );
 
   const filteredSymbols = useMemo(() => {
-    const query = search.trim().toUpperCase();
+    const query = search.trim().toLowerCase();
     if (!query) return symbols;
-    return symbols.filter((item) => item.includes(query));
+    return symbols.filter((item) => {
+      const meta = getCoinMeta(item);
+      return meta.searchTokens.some((token) => token.includes(query));
+    });
   }, [search, symbols]);
 
   useEffect(() => {
@@ -370,7 +430,7 @@ function App() {
             </div>
             <input
               className="search-input"
-              placeholder="Search symbol (e.g. BTC-USD)"
+              placeholder="Search by symbol or name (e.g. BTC, bitcoin, ETH, ethereum)"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
@@ -390,7 +450,10 @@ function App() {
                 const pseudoMove = ((score % 220) - 110) / 10;
                 return (
                   <li key={asset}>
-                    <span className="sym">{asset}</span>
+                    <span className="sym">
+                      <span className="sym-name">{getCoinMeta(asset).name}</span>
+                      <span className="sym-code">{asset}</span>
+                    </span>
                     <span className={pseudoMove >= 0 ? "up" : "down"}>
                       {pseudoMove >= 0 ? "+" : ""}
                       {pseudoMove.toFixed(2)}%
@@ -414,7 +477,8 @@ function App() {
             </div>
             <div className="rh-price-header">
               <div>
-                <h1>{symbol}</h1>
+                <h1>{getCoinMeta(symbol).name}</h1>
+                <p className="muted">{symbol}</p>
                 <div className="price-row">
                   <span className="price">{displayedPrice !== null ? formatCurrency(displayedPrice) : "--"}</span>
                   <span className={priceDelta !== null && priceDelta >= 0 ? "delta up" : "delta down"}>
