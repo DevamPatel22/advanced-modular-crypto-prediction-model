@@ -18,12 +18,15 @@ Build a reliable, scalable prediction platform that can evolve from MVP analytic
 - US-tradable USD crypto universe endpoint and validation in place
 - Market data APIs available (candles, ticker, websocket ticker stream)
 - Background ingestion loop for tradable symbols enabled via env config
+- Model registry + artifact-backed prediction inference with automatic fallback
+- All-symbol training and promotion scripts with per-horizon quality gates
+- Stochastic feature layer (GBM + Markov regime probabilities) and martingale residual diagnostic in promotion gate
 - Interactive frontend with:
   - markets homepage (search by symbol or coin name)
   - asset detail page (line/candlestick, ranges, MA/EMA/VA toggles)
   - dedicated prediction model tab
 - Prediction response includes risk-aware return ranges and risk score/level
-- Baseline model training/evaluation pipeline and report generator added
+- Baseline evaluation + full-universe training reports
 
 ## Repository Structure
 
@@ -53,6 +56,39 @@ Then open:
 - Health: `http://localhost:8000/api/v1/health`
 - Swagger docs: `http://localhost:8000/docs`
 
+## ML Ops Workflow
+
+Daily candidate training:
+
+```bash
+cd backend
+python scripts/train_all_symbols.py --model-version daily-$(date +%Y%m%d) --output reports/summary_report.json
+```
+
+Or run full daily pipeline (ingest -> train -> promote):
+
+```bash
+cd backend
+python scripts/daily_retrain.py --phase phase3
+```
+
+Promotion (phased):
+
+```bash
+cd backend
+python scripts/promote_model.py --candidate daily-20260213 --phase phase1
+```
+
+Model artifacts and registry:
+
+```text
+backend/data/models/registry.json
+backend/data/models/<model_version>/<symbol>/cls_<horizon>.joblib
+backend/data/models/<model_version>/<symbol>/reg_<horizon>.joblib
+backend/data/models/<model_version>/<symbol>/calibration_<horizon>.json
+backend/data/models/<model_version>/<symbol>/metrics_<horizon>.json
+```
+
 ## Quick Start (Frontend)
 
 ```bash
@@ -66,8 +102,8 @@ Then open `http://localhost:5173`.
 
 ## Product Roadmap
 
-1. Replace prediction stub with trained artifact inference per horizon
-2. Improve feature engineering and add model selection workflow
+1. Expand daily retraining automation and promotion observability
+2. Improve feature engineering and add more model families
 3. Add horizon-specific calibration + confidence reliability tracking
 4. Introduce alerting and user-level preferences/watchlists
 5. Add auth + role model + audit logging
@@ -85,3 +121,4 @@ Then open `http://localhost:5173`.
 
 - This repository is intentionally developed in phased milestones.
 - Early commits prioritize stable foundations before feature breadth.
+- Public prediction API shape remains stable while backend model quality evolves.

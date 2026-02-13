@@ -26,3 +26,4 @@ Default app URL: `http://localhost:5173`
   - hover inspection for OHLCV values
 - Dedicated prediction model tab/page
 - Prediction result UI includes risk-aware return range and risk score/level
+- Prediction values are backend model-driven when promoted artifacts exist, with automatic fallback continuity

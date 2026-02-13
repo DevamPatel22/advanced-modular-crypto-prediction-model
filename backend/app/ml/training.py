@@ -1,0 +1,485 @@
+from __future__ import annotations
+
+import json
+import math
+import sqlite3
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from joblib import dump
+from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor, RandomForestRegressor
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    accuracy_score,
+    f1_score,
+    mean_absolute_error,
+    mean_squared_error,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
+from app.config import get_settings
+from app.ml.features import FEATURE_COLUMNS, FEATURE_VERSION, HORIZON_SPECS, HorizonSpec, build_features
+
+MIN_SAMPLES = 320
+LOOKBACK_BUFFER = 50
+
+
+@dataclass(frozen=True)
+class SplitData:
+    x_train: pd.DataFrame
+    x_val: pd.DataFrame
+    x_test: pd.DataFrame
+    y_train_cls: pd.Series
+    y_val_cls: pd.Series
+    y_test_cls: np.ndarray
+    y_train_reg: pd.Series
+    y_val_reg: pd.Series
+    y_test_reg: np.ndarray
+    current_close_test: np.ndarray
+
+
+@dataclass(frozen=True)
+class CandidateResult:
+    model_name: str
+    model: Pipeline
+    val_score: float
+
+
+def _database_path() -> Path:
+    settings = get_settings()
+    return Path(settings.market_data_sqlite_path)
+
+
+def _connect() -> sqlite3.Connection:
+    connection = sqlite3.connect(_database_path())
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def load_candles(symbol: str, granularity: str) -> pd.DataFrame:
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT start_time, open, high, low, close, volume
+            FROM candles
+            WHERE symbol = ? AND granularity = ?
+            ORDER BY start_time ASC
+            """,
+            (symbol.upper(), granularity),
+        ).fetchall()
+
+    if not rows:
+        return pd.DataFrame(columns=["start_time", "open", "high", "low", "close", "volume"])
+
+    frame = pd.DataFrame([dict(row) for row in rows])
+    for column in ["open", "high", "low", "close", "volume"]:
+        frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    frame = frame.dropna(subset=["open", "high", "low", "close", "volume"]).reset_index(drop=True)
+    return frame
+
+
+def list_symbols_with_any_candles(min_rows: int = 100) -> list[str]:
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT symbol
+            FROM candles
+            GROUP BY symbol
+            HAVING COUNT(*) >= ?
+            ORDER BY symbol ASC
+            """,
+            (min_rows,),
+        ).fetchall()
+    return [str(row["symbol"]) for row in rows]
+
+
+def _mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    denom = np.clip(np.abs(y_true), 1e-12, None)
+    return float(np.mean(np.abs((y_true - y_pred) / denom)))
+
+
+def _split_indices(length: int) -> tuple[int, int]:
+    train_end = int(length * 0.7)
+    val_end = int(length * 0.85)
+    return train_end, val_end
+
+
+def resolve_horizon_data(symbol: str, spec: HorizonSpec, min_samples: int = MIN_SAMPLES) -> tuple[str, int, pd.DataFrame] | None:
+    for granularity, steps in spec.candidates:
+        candidate = load_candles(symbol, granularity)
+        if len(candidate) >= (min_samples + steps + LOOKBACK_BUFFER):
+            return granularity, steps, candidate
+    return None
+
+
+def _prepare_supervised(df: pd.DataFrame, steps_ahead: int, min_samples: int = MIN_SAMPLES) -> tuple[pd.DataFrame, SplitData] | None:
+    enriched = build_features(df)
+    enriched["target_close"] = enriched["close"].shift(-steps_ahead)
+    enriched["target_up"] = (enriched["target_close"] > enriched["close"]).astype(int)
+    enriched = enriched.dropna(subset=FEATURE_COLUMNS + ["target_close", "target_up"]).reset_index(drop=True)
+
+    if len(enriched) < min_samples:
+        return None
+
+    train_end, val_end = _split_indices(len(enriched))
+    train_df = enriched.iloc[:train_end]
+    val_df = enriched.iloc[train_end:val_end]
+    test_df = enriched.iloc[val_end:]
+
+    if len(test_df) < 30 or train_df["target_up"].nunique() < 2:
+        return None
+
+    split = SplitData(
+        x_train=train_df[FEATURE_COLUMNS],
+        x_val=val_df[FEATURE_COLUMNS],
+        x_test=test_df[FEATURE_COLUMNS],
+        y_train_cls=train_df["target_up"],
+        y_val_cls=val_df["target_up"],
+        y_test_cls=test_df["target_up"].to_numpy(dtype=float),
+        y_train_reg=train_df["target_close"],
+        y_val_reg=val_df["target_close"],
+        y_test_reg=test_df["target_close"].to_numpy(dtype=float),
+        current_close_test=test_df["close"].to_numpy(dtype=float),
+    )
+    return enriched, split
+
+
+def _classification_candidates() -> list[tuple[str, Pipeline]]:
+    return [
+        (
+            "logistic_regression",
+            Pipeline(
+                steps=[
+                    ("imputer", SimpleImputer(strategy="median")),
+                    ("scaler", StandardScaler()),
+                    ("model", LogisticRegression(max_iter=1500, class_weight="balanced", random_state=42)),
+                ]
+            ),
+        ),
+        (
+            "gradient_boosting_classifier",
+            Pipeline(
+                steps=[
+                    ("imputer", SimpleImputer(strategy="median")),
+                    (
+                        "model",
+                        GradientBoostingClassifier(
+                            n_estimators=180,
+                            learning_rate=0.05,
+                            max_depth=3,
+                            random_state=42,
+                        ),
+                    ),
+                ]
+            ),
+        ),
+    ]
+
+
+def _regression_candidates() -> list[tuple[str, Pipeline]]:
+    return [
+        (
+            "random_forest_regressor",
+            Pipeline(
+                steps=[
+                    ("imputer", SimpleImputer(strategy="median")),
+                    (
+                        "model",
+                        RandomForestRegressor(
+                            n_estimators=250,
+                            max_depth=12,
+                            min_samples_leaf=4,
+                            random_state=42,
+                            n_jobs=-1,
+                        ),
+                    ),
+                ]
+            ),
+        ),
+        (
+            "gradient_boosting_regressor",
+            Pipeline(
+                steps=[
+                    ("imputer", SimpleImputer(strategy="median")),
+                    (
+                        "model",
+                        GradientBoostingRegressor(
+                            n_estimators=200,
+                            learning_rate=0.05,
+                            max_depth=3,
+                            random_state=42,
+                        ),
+                    ),
+                ]
+            ),
+        ),
+    ]
+
+
+def _select_best_classifier(split: SplitData) -> CandidateResult:
+    best: CandidateResult | None = None
+    for model_name, model in _classification_candidates():
+        model.fit(split.x_train, split.y_train_cls)
+        val_pred = model.predict(split.x_val)
+        score = float(f1_score(split.y_val_cls, val_pred, zero_division=0))
+        if best is None or score > best.val_score:
+            best = CandidateResult(model_name=model_name, model=model, val_score=score)
+    if best is None:
+        raise RuntimeError("No classification candidate available")
+    return best
+
+
+def _select_best_regressor(split: SplitData) -> CandidateResult:
+    best: CandidateResult | None = None
+    for model_name, model in _regression_candidates():
+        model.fit(split.x_train, split.y_train_reg)
+        val_pred = model.predict(split.x_val)
+        score = -float(math.sqrt(mean_squared_error(split.y_val_reg.to_numpy(dtype=float), val_pred)))
+        if best is None or score > best.val_score:
+            best = CandidateResult(model_name=model_name, model=model, val_score=score)
+    if best is None:
+        raise RuntimeError("No regression candidate available")
+    return best
+
+
+def _build_calibration_payload(y_true: np.ndarray, y_prob: np.ndarray) -> dict[str, float | str]:
+    clipped = np.clip(y_prob, 1e-6, 1 - 1e-6)
+    avg_confidence = float(np.mean(np.maximum(clipped, 1 - clipped)))
+    avg_accuracy = float(np.mean((clipped >= 0.5) == (y_true >= 0.5)))
+    scale = avg_accuracy / max(avg_confidence, 1e-6)
+    scale = float(min(1.3, max(0.7, scale)))
+    return {
+        "method": "linear_scale",
+        "scale": scale,
+        "min_confidence": 0.50,
+        "max_confidence": 0.99,
+    }
+
+
+def calibrate_confidence(raw_probability_up: float, calibration: dict[str, float | str]) -> float:
+    scale = float(calibration.get("scale", 1.0))
+    min_conf = float(calibration.get("min_confidence", 0.5))
+    max_conf = float(calibration.get("max_confidence", 0.99))
+
+    raw = max(raw_probability_up, 1 - raw_probability_up)
+    calibrated = min(max_conf, max(min_conf, raw * scale))
+    return float(calibrated)
+
+
+def _metrics(y_true_cls: np.ndarray, y_pred_cls: np.ndarray, y_proba_cls: np.ndarray, y_true_reg: np.ndarray, y_pred_reg: np.ndarray) -> dict[str, float]:
+    return {
+        "accuracy": float(accuracy_score(y_true_cls, y_pred_cls)),
+        "precision": float(precision_score(y_true_cls, y_pred_cls, zero_division=0)),
+        "recall": float(recall_score(y_true_cls, y_pred_cls, zero_division=0)),
+        "f1": float(f1_score(y_true_cls, y_pred_cls, zero_division=0)),
+        "roc_auc": float(roc_auc_score(y_true_cls, y_proba_cls)) if len(np.unique(y_true_cls)) > 1 else math.nan,
+        "mae": float(mean_absolute_error(y_true_reg, y_pred_reg)),
+        "rmse": float(math.sqrt(mean_squared_error(y_true_reg, y_pred_reg))),
+        "mape": _mape(y_true_reg, y_pred_reg),
+    }
+
+
+def _baseline_metrics(y_true_cls: np.ndarray, y_true_reg: np.ndarray, current_close: np.ndarray) -> dict[str, float]:
+    cls_baseline = np.ones_like(y_true_cls)
+    reg_baseline = current_close
+    return {
+        "accuracy": float(accuracy_score(y_true_cls, cls_baseline)),
+        "f1": float(f1_score(y_true_cls, cls_baseline, zero_division=0)),
+        "rmse": float(math.sqrt(mean_squared_error(y_true_reg, reg_baseline))),
+        "mae": float(mean_absolute_error(y_true_reg, reg_baseline)),
+        "mape": _mape(y_true_reg, reg_baseline),
+    }
+
+
+def _martingale_residual_diagnostic(y_true_reg: np.ndarray, y_pred_reg: np.ndarray) -> dict[str, float | bool]:
+    residuals = y_true_reg - y_pred_reg
+    if len(residuals) < 30:
+        return {
+            "acf1": math.nan,
+            "variance": float(np.var(residuals)) if len(residuals) else math.nan,
+            "pass": False,
+        }
+
+    lagged = residuals[:-1]
+    lead = residuals[1:]
+    lag_std = float(np.std(lagged))
+    lead_std = float(np.std(lead))
+    if lag_std <= 1e-12 or lead_std <= 1e-12:
+        acf1 = 0.0
+    else:
+        acf1 = float(np.corrcoef(lagged, lead)[0, 1])
+    acf1 = float(np.clip(acf1, -1.0, 1.0))
+    return {
+        "acf1": acf1,
+        "variance": float(np.var(residuals)),
+        "pass": abs(acf1) <= 0.10,
+    }
+
+
+def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, models_root: Path, write_artifacts: bool = True) -> dict[str, object]:
+    resolved = resolve_horizon_data(symbol, spec)
+    if resolved is None:
+        return {
+            "symbol": symbol,
+            "horizon": spec.label,
+            "status": "insufficient_data",
+            "reason": "no_granularity_meets_minimum",
+        }
+
+    granularity, steps, frame = resolved
+    prepared = _prepare_supervised(frame, steps)
+    if prepared is None:
+        return {
+            "symbol": symbol,
+            "horizon": spec.label,
+            "status": "insufficient_data",
+            "reason": "insufficient_rows_after_feature_pipeline",
+            "granularity": granularity,
+            "steps_ahead": steps,
+        }
+
+    enriched, split = prepared
+
+    cls_best = _select_best_classifier(split)
+    reg_best = _select_best_regressor(split)
+
+    cls_pred = cls_best.model.predict(split.x_test)
+    cls_prob = cls_best.model.predict_proba(split.x_test)[:, 1]
+    reg_pred = reg_best.model.predict(split.x_test)
+
+    metrics = _metrics(
+        y_true_cls=split.y_test_cls,
+        y_pred_cls=cls_pred,
+        y_proba_cls=cls_prob,
+        y_true_reg=split.y_test_reg,
+        y_pred_reg=reg_pred,
+    )
+    baseline = _baseline_metrics(
+        y_true_cls=split.y_test_cls,
+        y_true_reg=split.y_test_reg,
+        current_close=split.current_close_test,
+    )
+    martingale_diag = _martingale_residual_diagnostic(split.y_test_reg, reg_pred)
+
+    promotion_pass = (
+        metrics["f1"] > baseline["f1"]
+        and metrics["accuracy"] > baseline["accuracy"]
+        and metrics["rmse"] < baseline["rmse"]
+        and bool(martingale_diag["pass"])
+    )
+
+    failed_reasons: list[str] = []
+    if not (metrics["f1"] > baseline["f1"]):
+        failed_reasons.append("classification_f1_not_above_baseline")
+    if not (metrics["accuracy"] > baseline["accuracy"]):
+        failed_reasons.append("classification_accuracy_not_above_baseline")
+    if not (metrics["rmse"] < baseline["rmse"]):
+        failed_reasons.append("regression_rmse_not_below_baseline")
+    if not bool(martingale_diag["pass"]):
+        failed_reasons.append("martingale_residual_autocorrelation_too_high")
+
+    calibration = _build_calibration_payload(split.y_test_cls, cls_prob)
+
+    symbol_dir = models_root / model_version / symbol
+    artifact_paths = {
+        "classification": symbol_dir / f"cls_{spec.label}.joblib",
+        "regression": symbol_dir / f"reg_{spec.label}.joblib",
+        "calibration": symbol_dir / f"calibration_{spec.label}.json",
+        "metrics": symbol_dir / f"metrics_{spec.label}.json",
+    }
+
+    metrics_payload: dict[str, object] = {
+        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "symbol": symbol,
+        "horizon": spec.label,
+        "status": "ok",
+        "model_version": model_version,
+        "feature_version": FEATURE_VERSION,
+        "granularity": granularity,
+        "steps_ahead": steps,
+        "rows_total": int(len(enriched)),
+        "rows_test": int(len(split.x_test)),
+        "selected_models": {
+            "classifier": cls_best.model_name,
+            "regressor": reg_best.model_name,
+        },
+        "metrics": metrics,
+        "baseline": baseline,
+        "martingale_diagnostic": martingale_diag,
+        "promotion_gate": {
+            "passed": promotion_pass,
+            "failed_reasons": failed_reasons,
+            "rules": {
+                "classification": ["f1 > baseline.f1", "accuracy > baseline.accuracy"],
+                "regression": ["rmse < baseline.rmse"],
+                "stochastic": ["abs(residual_acf1) <= 0.10"],
+            },
+        },
+        "artifact_paths": {key: str(path) for key, path in artifact_paths.items()},
+    }
+
+    if write_artifacts:
+        symbol_dir.mkdir(parents=True, exist_ok=True)
+        dump(cls_best.model, artifact_paths["classification"])
+        dump(reg_best.model, artifact_paths["regression"])
+        artifact_paths["calibration"].write_text(json.dumps(calibration, indent=2), encoding="utf-8")
+        artifact_paths["metrics"].write_text(json.dumps(metrics_payload, indent=2), encoding="utf-8")
+
+    metrics_payload["calibration"] = calibration
+    return metrics_payload
+
+
+def training_universe_snapshot(symbols: list[str]) -> dict[str, object]:
+    return {
+        "count": len(symbols),
+        "symbols": sorted(symbols),
+    }
+
+
+def model_manifest_payload(model_version: str, universe: list[str], symbol_horizon_results: dict[str, dict[str, object]]) -> dict[str, object]:
+    earliest = None
+    latest = None
+
+    for symbol in universe:
+        for entry in symbol_horizon_results.get(symbol, {}).values():
+            if entry.get("status") != "ok":
+                continue
+            horizon_min = entry.get("train_start_time")
+            horizon_max = entry.get("train_end_time")
+            if isinstance(horizon_min, (int, float)):
+                earliest = horizon_min if earliest is None else min(earliest, horizon_min)
+            if isinstance(horizon_max, (int, float)):
+                latest = horizon_max if latest is None else max(latest, horizon_max)
+
+    return {
+        "model_version": model_version,
+        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "feature_version": FEATURE_VERSION,
+        "universe": training_universe_snapshot(universe),
+        "data_range": {
+            "min_start_time": earliest,
+            "max_start_time": latest,
+        },
+    }
+
+
+def all_horizon_specs() -> list[HorizonSpec]:
+    return list(HORIZON_SPECS)
+
+
+def as_json(data: object) -> str:
+    return json.dumps(data, indent=2, sort_keys=False)
+
+
+def as_plain_dict(obj: object) -> dict[str, object]:
+    if hasattr(obj, "__dataclass_fields__"):
+        return asdict(obj)  # type: ignore[arg-type]
+    raise TypeError("Object is not a dataclass instance")

@@ -11,7 +11,8 @@ Current scope:
 - market-data retrieval + SQLite caching
 - background ingestion loop for tradable symbols
 - risk-aware prediction range output
-- baseline model training/evaluation CLI
+- model registry + promotion flow
+- baseline and all-symbol training/evaluation CLIs
 
 ## Setup
 
@@ -62,6 +63,116 @@ The report includes per-horizon:
 - data notes: selected granularity and step horizon
 
 If a horizon shows `insufficient_data`, ingest more history first and rerun.
+
+## Full-Universe Training (All US-Tradable USD Symbols)
+
+Train candidate models for all tradable symbols and all supported horizons:
+
+```bash
+python scripts/train_all_symbols.py --model-version daily-20260213 --output reports/summary_report.json
+```
+
+Training targets horizons:
+
+- `5m`, `1h`, `6h`, `12h`, `1d`, `1w`, `1mo`, `3mo`
+
+Candidate models per symbol+horizon:
+
+- Classification: Logistic Regression (baseline) + Gradient Boosting
+- Regression: Random Forest (baseline) + Gradient Boosting
+
+Stochastic feature layer (used by all model candidates):
+
+- GBM-style drift/volatility features (`mu_20`, `sigma_20`, expected return/variance)
+- shock normalization (`shock_z_20`)
+- Markov transition probabilities over return regimes (`down/flat/up`)
+
+Promotion gate (must pass all):
+
+- classification `f1 > baseline.f1`
+- classification `accuracy > baseline.accuracy`
+- regression `rmse < baseline.rmse`
+- martingale diagnostic `abs(residual_acf1) <= 0.10`
+
+Baselines:
+
+- direction baseline: always-up
+- price baseline: persistence (`next_close = current_close`)
+
+## Promotion / Activation
+
+Promote a trained candidate version:
+
+```bash
+python scripts/promote_model.py --candidate daily-20260213 --active daily-20260212 --phase phase1
+```
+
+Phases:
+
+- `phase1`: activates only `BTC-USD`, `ETH-USD`, `SOL-USD` entries that pass gates
+- `phase2`: activates previous active set + next batch (`--phase2-batch-size`, default 20)
+- `phase3`: activates all passed symbol+horizon entries
+
+Any symbol+horizon without promoted artifacts automatically stays on fallback inference.
+
+## Artifact Layout
+
+```text
+backend/data/models/
+  registry.json
+  <model_version>/
+    manifest.json
+    <symbol>/
+      cls_<horizon>.joblib
+      reg_<horizon>.joblib
+      calibration_<horizon>.json
+      metrics_<horizon>.json
+```
+
+Reports:
+
+- per-symbol reports: `backend/reports/symbols/<symbol>.json`
+- aggregate report: `backend/reports/summary_report.json`
+- promotion report: `backend/reports/promotion_report.json`
+
+## Retraining Cadence
+
+- Target schedule: daily (`RETRAIN_SCHEDULE_CRON`, default `0 2 * * *`)
+- Flow:
+  1. ingest latest candles
+  2. train candidate version
+  3. run promotion command
+  4. keep previous active version for rollback
+
+### One-command daily pipeline
+
+```bash
+python scripts/daily_retrain.py --phase phase3
+```
+
+This command runs:
+
+1. `run_ingestion_cycle()`
+2. `scripts/train_all_symbols.py`
+3. `scripts/promote_model.py`
+
+Outputs:
+
+- `backend/reports/daily_retrain_<model_version>.json`
+- `backend/reports/summary_report_<model_version>.json`
+- `backend/reports/promotion_report_<model_version>.json`
+
+### macOS cron example (daily 2:00 AM local time)
+
+```bash
+crontab -e
+```
+
+Add:
+
+```cron
+0 2 * * * /bin/zsh -lc 'cd /Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend && source .venv/bin/activate && python scripts/daily_retrain.py --phase phase3 >> /Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/cron_daily_retrain.log 2>&1'
+```
 
 Example request:
 
