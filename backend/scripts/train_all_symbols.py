@@ -18,7 +18,7 @@ from app.services.markets import fetch_symbols_by_quote
 
 
 def _default_model_version() -> str:
-    return datetime.now(tz=UTC).strftime("daily-%Y%m%d")
+    return datetime.now(tz=UTC).strftime("daily-%Y%m%d-%H%M%S")
 
 
 async def _resolve_universe(limit: int) -> list[str]:

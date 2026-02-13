@@ -69,7 +69,7 @@ If a horizon shows `insufficient_data`, ingest more history first and rerun.
 Train candidate models for all tradable symbols and all supported horizons:
 
 ```bash
-python scripts/train_all_symbols.py --model-version daily-20260213 --output reports/summary_report.json
+python scripts/train_all_symbols.py --model-version daily-20260213-020000 --output reports/summary_report.json
 ```
 
 Training targets horizons:
@@ -104,7 +104,7 @@ Baselines:
 Promote a trained candidate version:
 
 ```bash
-python scripts/promote_model.py --candidate daily-20260213 --active daily-20260212 --phase phase1
+python scripts/promote_model.py --candidate daily-20260213-020000 --active daily-20260212-020000 --phase phase1
 ```
 
 Phases:

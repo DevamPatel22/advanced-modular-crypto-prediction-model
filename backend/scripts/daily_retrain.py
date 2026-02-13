@@ -23,7 +23,7 @@ def _run_command(args: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def _today_version() -> str:
-    return datetime.now(tz=UTC).strftime("daily-%Y%m%d")
+    return datetime.now(tz=UTC).strftime("daily-%Y%m%d-%H%M%S")
 
 
 def main() -> None:
