@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { fetchCandles, fetchPrediction, fetchTradableSymbols, getApiBaseUrl } from "./lib/api";
 import type { CandleGranularity, CandlePoint, Horizon, PredictionResponse, Symbol } from "./types/prediction";
 
-const horizons: Horizon[] = ["5m", "1h", "4h"];
+const horizons: Horizon[] = ["5m", "1h", "6h", "12h", "1d", "1w", "1mo", "3mo"];
 const fallbackSymbols: Symbol[] = ["BTC-USD", "ETH-USD", "SOL-USD"];
 const rangeKeys = ["1D", "1W", "1M", "1Y", "MAX"] as const;
 

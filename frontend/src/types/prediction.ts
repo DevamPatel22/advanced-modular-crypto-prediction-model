@@ -1,5 +1,5 @@
 export type Symbol = string;
-export type Horizon = "5m" | "1h" | "4h";
+export type Horizon = "5m" | "1h" | "6h" | "12h" | "1d" | "1w" | "1mo" | "3mo";
 
 export interface PredictionRequest {
   symbol: Symbol;

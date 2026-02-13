@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     default_horizon: str = "1h"
     default_model_version: str = "baseline-v1"
     supported_symbols: str = "BTC-USD,ETH-USD,SOL-USD"
-    supported_horizons: str = "5m,1h,4h"
+    supported_horizons: str = "5m,1h,6h,12h,1d,1w,1mo,3mo"
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     markets_source_url: str = "https://api.exchange.coinbase.com/products"
     symbol_cache_ttl_seconds: int = 300

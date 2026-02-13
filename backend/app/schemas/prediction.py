@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-SupportedHorizon = Literal["5m", "1h", "4h"]
+SupportedHorizon = Literal["5m", "1h", "6h", "12h", "1d", "1w", "1mo", "3mo"]
 
 
 class PredictionRequest(BaseModel):
