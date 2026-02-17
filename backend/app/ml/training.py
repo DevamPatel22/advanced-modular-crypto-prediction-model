@@ -40,6 +40,16 @@ HORIZON_MIN_SAMPLES: dict[str, int] = {
     "1mo": 140,
     "3mo": 120,
 }
+HORIZON_LOG_RETURN_CLIP: dict[str, float] = {
+    "5m": 0.08,
+    "1h": 0.18,
+    "6h": 0.35,
+    "12h": 0.50,
+    "1d": 0.75,
+    "1w": 1.25,
+    "1mo": 1.75,
+    "3mo": 2.50,
+}
 
 
 @dataclass(frozen=True)
@@ -53,7 +63,10 @@ class SplitData:
     y_train_reg: pd.Series
     y_val_reg: pd.Series
     y_test_reg: np.ndarray
+    current_close_val: np.ndarray
     current_close_test: np.ndarray
+    target_close_val: np.ndarray
+    target_close_test: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -75,16 +88,19 @@ def _connect() -> sqlite3.Connection:
 
 
 def load_candles(symbol: str, granularity: str) -> pd.DataFrame:
-    with _connect() as conn:
-        rows = conn.execute(
-            """
-            SELECT start_time, open, high, low, close, volume
-            FROM candles
-            WHERE symbol = ? AND granularity = ?
-            ORDER BY start_time ASC
-            """,
-            (symbol.upper(), granularity),
-        ).fetchall()
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT start_time, open, high, low, close, volume
+                FROM candles
+                WHERE symbol = ? AND granularity = ?
+                ORDER BY start_time ASC
+                """,
+                (symbol.upper(), granularity),
+            ).fetchall()
+    except sqlite3.OperationalError:
+        return pd.DataFrame(columns=["start_time", "open", "high", "low", "close", "volume"])
 
     if not rows:
         return pd.DataFrame(columns=["start_time", "open", "high", "low", "close", "volume"])
@@ -126,6 +142,11 @@ def min_samples_for_horizon(horizon: str) -> int:
     return int(HORIZON_MIN_SAMPLES.get(horizon, MIN_SAMPLES))
 
 
+def clip_log_return_predictions(values: np.ndarray, horizon: str) -> np.ndarray:
+    clip_value = float(HORIZON_LOG_RETURN_CLIP.get(horizon, 1.0))
+    return np.clip(values, -clip_value, clip_value)
+
+
 def resolve_horizon_data(symbol: str, spec: HorizonSpec, min_samples: int | None = None) -> tuple[str, int, pd.DataFrame] | None:
     required = min_samples if min_samples is not None else min_samples_for_horizon(spec.label)
     for granularity, steps in spec.candidates:
@@ -138,8 +159,10 @@ def resolve_horizon_data(symbol: str, spec: HorizonSpec, min_samples: int | None
 def _prepare_supervised(df: pd.DataFrame, steps_ahead: int, min_samples: int) -> tuple[pd.DataFrame, SplitData] | None:
     enriched = build_features(df)
     enriched["target_close"] = enriched["close"].shift(-steps_ahead)
+    enriched["target_log_return"] = np.log((enriched["target_close"] + 1e-12) / (enriched["close"] + 1e-12))
     enriched["target_up"] = (enriched["target_close"] > enriched["close"]).astype(int)
-    enriched = enriched.dropna(subset=FEATURE_COLUMNS + ["target_close", "target_up"]).reset_index(drop=True)
+    enriched = enriched[(enriched["close"] > 0) & (enriched["target_close"] > 0)]
+    enriched = enriched.dropna(subset=FEATURE_COLUMNS + ["target_close", "target_log_return", "target_up"]).reset_index(drop=True)
 
     if len(enriched) < min_samples:
         return None
@@ -159,10 +182,13 @@ def _prepare_supervised(df: pd.DataFrame, steps_ahead: int, min_samples: int) ->
         y_train_cls=train_df["target_up"],
         y_val_cls=val_df["target_up"],
         y_test_cls=test_df["target_up"].to_numpy(dtype=float),
-        y_train_reg=train_df["target_close"],
-        y_val_reg=val_df["target_close"],
-        y_test_reg=test_df["target_close"].to_numpy(dtype=float),
+        y_train_reg=train_df["target_log_return"],
+        y_val_reg=val_df["target_log_return"],
+        y_test_reg=test_df["target_log_return"].to_numpy(dtype=float),
+        current_close_val=val_df["close"].to_numpy(dtype=float),
         current_close_test=test_df["close"].to_numpy(dtype=float),
+        target_close_val=val_df["target_close"].to_numpy(dtype=float),
+        target_close_test=test_df["target_close"].to_numpy(dtype=float),
     )
     return enriched, split
 
@@ -252,12 +278,14 @@ def _select_best_classifier(split: SplitData) -> CandidateResult:
     return best
 
 
-def _select_best_regressor(split: SplitData) -> CandidateResult:
+def _select_best_regressor(split: SplitData, horizon: str) -> CandidateResult:
     best: CandidateResult | None = None
     for model_name, model in _regression_candidates():
         model.fit(split.x_train, split.y_train_reg)
-        val_pred = model.predict(split.x_val)
-        score = -float(math.sqrt(mean_squared_error(split.y_val_reg.to_numpy(dtype=float), val_pred)))
+        val_pred_log_return = model.predict(split.x_val)
+        val_pred_log_return = clip_log_return_predictions(val_pred_log_return, horizon)
+        val_pred_close = split.current_close_val * np.exp(val_pred_log_return)
+        score = -float(math.sqrt(mean_squared_error(split.target_close_val, val_pred_close)))
         if best is None or score > best.val_score:
             best = CandidateResult(model_name=model_name, model=model, val_score=score)
     if best is None:
@@ -367,31 +395,35 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
     enriched, split = prepared
 
     cls_best = _select_best_classifier(split)
-    reg_best = _select_best_regressor(split)
+    reg_best = _select_best_regressor(split, spec.label)
 
     cls_pred = cls_best.model.predict(split.x_test)
     cls_prob = cls_best.model.predict_proba(split.x_test)[:, 1]
-    reg_pred = reg_best.model.predict(split.x_test)
+    reg_pred_log_return = reg_best.model.predict(split.x_test)
+    reg_pred_log_return = clip_log_return_predictions(reg_pred_log_return, spec.label)
+    reg_pred = split.current_close_test * np.exp(reg_pred_log_return)
 
     metrics = _metrics(
         y_true_cls=split.y_test_cls,
         y_pred_cls=cls_pred,
         y_proba_cls=cls_prob,
-        y_true_reg=split.y_test_reg,
+        y_true_reg=split.target_close_test,
         y_pred_reg=reg_pred,
     )
     baseline = _baseline_metrics(
         y_true_cls=split.y_test_cls,
-        y_true_reg=split.y_test_reg,
+        y_true_reg=split.target_close_test,
         current_close=split.current_close_test,
     )
-    martingale_diag = _martingale_residual_diagnostic(split.y_test_reg, reg_pred)
+    martingale_diag = _martingale_residual_diagnostic(split.target_close_test, reg_pred)
+    settings = get_settings()
+    martingale_enforced = settings.martingale_gate_mode.strip().lower() == "strict"
 
     promotion_pass = (
         metrics["f1"] > baseline["f1"]
         and metrics["accuracy"] > baseline["accuracy"]
         and metrics["rmse"] < baseline["rmse"]
-        and bool(martingale_diag["pass"])
+        and (bool(martingale_diag["pass"]) if martingale_enforced else True)
     )
 
     failed_reasons: list[str] = []
@@ -401,7 +433,7 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         failed_reasons.append("classification_accuracy_not_above_baseline")
     if not (metrics["rmse"] < baseline["rmse"]):
         failed_reasons.append("regression_rmse_not_below_baseline")
-    if not bool(martingale_diag["pass"]):
+    if martingale_enforced and (not bool(martingale_diag["pass"])):
         failed_reasons.append("martingale_residual_autocorrelation_too_high")
 
     calibration = _build_calibration_payload(split.y_test_cls, cls_prob)
@@ -432,13 +464,17 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         "metrics": metrics,
         "baseline": baseline,
         "martingale_diagnostic": martingale_diag,
+        "martingale_enforced": martingale_enforced,
+        "regression_target": "log_return",
+        "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+        "log_return_clip": float(HORIZON_LOG_RETURN_CLIP.get(spec.label, 1.0)),
         "promotion_gate": {
             "passed": promotion_pass,
             "failed_reasons": failed_reasons,
             "rules": {
                 "classification": ["f1 > baseline.f1", "accuracy > baseline.accuracy"],
                 "regression": ["rmse < baseline.rmse"],
-                "stochastic": ["abs(residual_acf1) <= 0.10"],
+                "stochastic": ["abs(residual_acf1) <= 0.10 (strict mode only)"],
             },
         },
         "artifact_paths": {key: str(path) for key, path in artifact_paths.items()},

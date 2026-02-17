@@ -21,6 +21,7 @@ Build a reliable, scalable prediction platform that can evolve from MVP analytic
 - Model registry + artifact-backed prediction inference with automatic fallback
 - All-symbol training and promotion scripts with per-horizon quality gates
 - Stochastic feature layer (GBM + Markov regime probabilities) and martingale residual diagnostic in promotion gate
+- Log-return regression target with clipped inverse transform and staged martingale gate (`bootstrap` to `strict`)
 - Interactive frontend with:
   - markets homepage (search by symbol or coin name)
   - asset detail page (line/candlestick, ranges, MA/EMA/VA toggles)

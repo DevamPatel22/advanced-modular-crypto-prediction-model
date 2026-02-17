@@ -5,17 +5,19 @@ import math
 from pathlib import Path
 from statistics import pstdev
 
+import numpy as np
 import pandas as pd
 from joblib import load
 
 from app.config import get_settings
 from app.ml.features import FEATURE_COLUMNS, HORIZON_SPECS, HorizonSpec, build_features
-from app.ml.training import load_candles
+from app.ml.training import clip_log_return_predictions, load_candles
 from app.schemas.prediction import PredictionRequest, PredictionResponse
 from app.services.model_registry import ModelRegistry
 
 _MODEL_CACHE: dict[str, object] = {}
 _CALIBRATION_CACHE: dict[str, dict[str, float | str]] = {}
+_METRICS_CACHE: dict[str, dict[str, object]] = {}
 
 
 def _deterministic_signal(seed: str) -> tuple[str, float, float]:
@@ -49,6 +51,16 @@ def _load_calibration(path: Path) -> dict[str, float | str]:
             payload = {}
         _CALIBRATION_CACHE[key] = payload
     return _CALIBRATION_CACHE[key]
+
+
+def _load_metrics(path: Path) -> dict[str, object]:
+    key = str(path.resolve())
+    if key not in _METRICS_CACHE:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            payload = {}
+        _METRICS_CACHE[key] = payload
+    return _METRICS_CACHE[key]
 
 
 def _calibrate_confidence(raw_probability_up: float, calibration: dict[str, float | str]) -> float:
@@ -150,9 +162,16 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
     cls_model = _load_cached_model(artifact_paths["classification"])
     reg_model = _load_cached_model(artifact_paths["regression"])
     calibration = _load_calibration(artifact_paths["calibration"])
+    metrics_meta = _load_metrics(artifact_paths["metrics"])
 
     raw_prob_up = float(cls_model.predict_proba(features)[0][1])
-    pred_close = float(reg_model.predict(features)[0])
+    reg_raw = float(reg_model.predict(features)[0])
+    regression_target = str(metrics_meta.get("regression_target", "price_close"))
+    if regression_target == "log_return":
+        clipped = clip_log_return_predictions(np.array([reg_raw], dtype=float), payload.horizon)
+        pred_close = float(latest_close * math.exp(float(clipped[0])))
+    else:
+        pred_close = reg_raw
     direction = "up" if raw_prob_up >= 0.5 else "down"
     confidence = round(_calibrate_confidence(raw_prob_up, calibration), 4)
 
@@ -171,6 +190,7 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
             "raw_probability_up": f"{raw_prob_up:.6f}",
             "feature_granularity": feature_granularity,
             "latest_close": f"{latest_close:.6f}",
+            "regression_target": regression_target,
             "volatility_source_granularity": vol_granularity,
             "horizon_volatility": f"{horizon_vol:.6f}",
             "artifact_metrics": str(artifact_paths["metrics"]),

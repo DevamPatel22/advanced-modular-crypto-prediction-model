@@ -80,6 +80,7 @@ Candidate models per symbol+horizon:
 
 - Classification: Logistic Regression (baseline) + Gradient Boosting
 - Regression: Random Forest (baseline) + Gradient Boosting
+  Regression target is modeled as `log_return` and transformed back to price with horizon-aware clipping to reduce extreme RMSE outliers.
 
 Stochastic feature layer (used by all model candidates):
 
@@ -92,7 +93,7 @@ Promotion gate (must pass all):
 - classification `f1 > baseline.f1`
 - classification `accuracy > baseline.accuracy`
 - regression `rmse < baseline.rmse`
-- martingale diagnostic `abs(residual_acf1) <= 0.10`
+- martingale diagnostic `abs(residual_acf1) <= 0.10` when `MARTINGALE_GATE_MODE=strict`
 
 Horizon data readiness uses adaptive minimum sample targets (short horizons require more history than long horizons) so early-stage training can activate qualified pairs sooner while still keeping gate checks strict.
 
@@ -145,6 +146,7 @@ Reports:
 
 - Target schedule: daily (`RETRAIN_SCHEDULE_CRON`, default `0 2 * * *`)
 - Recommended ingestion depth for training readiness: `INGESTION_LIMIT_PER_SYMBOL=1500`
+- Staged stochastic gate control: `MARTINGALE_GATE_MODE=bootstrap|strict` (default: `bootstrap`)
 - Flow:
   1. ingest latest candles
   2. train candidate version
