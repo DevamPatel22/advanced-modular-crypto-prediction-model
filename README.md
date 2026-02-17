@@ -17,6 +17,7 @@ Build a reliable, scalable prediction platform that can evolve from MVP analytic
 
 - US-tradable USD crypto universe endpoint and validation in place
 - Market data APIs available (candles, ticker, websocket ticker stream)
+- Candle ingestion now supports multi-source merge (Coinbase primary + Binance secondary) for better data depth
 - Background ingestion loop for tradable symbols enabled via env config
 - Model registry + artifact-backed prediction inference with automatic fallback
 - All-symbol training and promotion scripts with per-horizon quality gates

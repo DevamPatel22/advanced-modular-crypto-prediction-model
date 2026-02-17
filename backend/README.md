@@ -9,6 +9,7 @@ Current scope:
 - FastAPI service with market and prediction APIs
 - US-tradable symbol universe validation (`quote=USD`)
 - market-data retrieval + SQLite caching
+  Candle ingestion uses Coinbase as primary and Binance (free spot API) as secondary fallback/supplement.
 - background ingestion loop for tradable symbols
 - risk-aware prediction range output
 - model registry + promotion flow
@@ -46,6 +47,10 @@ Background ingestion loop:
 
 - On startup, the service can continuously refresh candles for US-tradable USD symbols.
 - Controlled by `INGESTION_*` env variables in `backend/.env`.
+- Source controls:
+  `MARKET_DATA_SOURCE_BASE_URL` (primary, Coinbase),
+  `MARKET_DATA_SECONDARY_SOURCE_ENABLED`,
+  `MARKET_DATA_SECONDARY_SOURCE_BASE_URL` (secondary, Binance).
 
 ## Baseline Accuracy Evaluation
 

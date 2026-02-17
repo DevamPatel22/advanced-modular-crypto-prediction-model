@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     markets_source_url: str = "https://api.exchange.coinbase.com/products"
     symbol_cache_ttl_seconds: int = 300
     market_data_source_base_url: str = "https://api.exchange.coinbase.com"
+    market_data_secondary_source_enabled: bool = True
+    market_data_secondary_source_base_url: str = "https://api.binance.com"
     market_data_sqlite_path: str = "data/market_data.db"
     model_artifacts_root: str = "data/models"
     model_registry_path: str = "data/models/registry.json"

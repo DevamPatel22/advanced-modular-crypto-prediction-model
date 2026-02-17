@@ -17,6 +17,20 @@ GRANULARITY_TO_SECONDS = {
     "6h": 21600,
     "1d": 86400,
 }
+BINANCE_INTERVAL_MAP = {
+    "1m": "1m",
+    "5m": "5m",
+    "15m": "15m",
+    "1h": "1h",
+    "6h": "6h",
+    "1d": "1d",
+}
+
+
+def _to_binance_symbol(symbol: str) -> str:
+    # Binance spot uses quote assets such as USDT for most crypto USD equivalents.
+    base, _quote = symbol.split("-", 1)
+    return f"{base}USDT"
 
 
 def _database_path() -> Path:
@@ -174,6 +188,70 @@ async def _fetch_exchange_candles(symbol: str, granularity: str, limit: int) -> 
     return candles[-limit:]
 
 
+async def _fetch_binance_candles(symbol: str, granularity: str, limit: int) -> list[CandlePoint]:
+    settings = get_settings()
+    interval = BINANCE_INTERVAL_MAP[granularity]
+    url = f"{settings.market_data_secondary_source_base_url}/api/v3/klines"
+    binance_symbol = _to_binance_symbol(symbol)
+    end_cursor_ms = int(datetime.now(tz=UTC).timestamp() * 1000)
+    remaining = max(limit, 1)
+    collected: dict[int, CandlePoint] = {}
+    max_requests = 20
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for _ in range(max_requests):
+            if remaining <= 0:
+                break
+            batch_size = min(remaining, 1000)
+            params = {
+                "symbol": binance_symbol,
+                "interval": interval,
+                "limit": batch_size,
+                "endTime": end_cursor_ms,
+            }
+            response = await client.get(url, params=params, headers={"Accept": "application/json"})
+            response.raise_for_status()
+            rows = response.json()
+            if not rows:
+                break
+
+            oldest_open_ms = end_cursor_ms
+            for row in rows:
+                if not isinstance(row, list) or len(row) < 6:
+                    continue
+                start_ms = int(row[0])
+                candle = CandlePoint(
+                    start_time=start_ms // 1000,
+                    open=float(row[1]),
+                    high=float(row[2]),
+                    low=float(row[3]),
+                    close=float(row[4]),
+                    volume=float(row[5]),
+                )
+                collected[candle.start_time] = candle
+                oldest_open_ms = min(oldest_open_ms, start_ms)
+
+            remaining = limit - len(collected)
+            if len(rows) < batch_size:
+                break
+            next_end_ms = oldest_open_ms - 1
+            if next_end_ms >= end_cursor_ms:
+                break
+            end_cursor_ms = next_end_ms
+
+    candles = sorted(collected.values(), key=lambda item: item.start_time)
+    return candles[-limit:]
+
+
+def _merge_candle_sets(primary: list[CandlePoint], secondary: list[CandlePoint], limit: int) -> list[CandlePoint]:
+    merged: dict[int, CandlePoint] = {item.start_time: item for item in secondary}
+    # Primary source takes precedence for overlapping timestamps.
+    for item in primary:
+        merged[item.start_time] = item
+    candles = sorted(merged.values(), key=lambda item: item.start_time)
+    return candles[-limit:]
+
+
 async def get_candles(symbol: str, granularity: str, limit: int, refresh: bool = False) -> tuple[str, list[CandlePoint]]:
     normalized_symbol = symbol.upper().strip()
     if granularity not in GRANULARITY_TO_SECONDS:
@@ -183,14 +261,42 @@ async def get_candles(symbol: str, granularity: str, limit: int, refresh: bool =
     if cached and not refresh:
         return "sqlite_cache", cached
 
+    primary: list[CandlePoint] = []
+    secondary: list[CandlePoint] = []
+    primary_ok = False
+    secondary_ok = False
+    source = "coinbase_exchange"
+
     try:
-        exchange_candles = await _fetch_exchange_candles(normalized_symbol, granularity, limit)
-        _save_candles(normalized_symbol, granularity, exchange_candles, source="coinbase_exchange")
-        return "coinbase_exchange", exchange_candles
+        primary = await _fetch_exchange_candles(normalized_symbol, granularity, limit)
+        primary_ok = True
     except Exception:
+        primary = []
+
+    settings = get_settings()
+    if settings.market_data_secondary_source_enabled:
+        try:
+            secondary = await _fetch_binance_candles(normalized_symbol, granularity, limit)
+            secondary_ok = True
+        except Exception:
+            secondary = []
+
+    if primary_ok and secondary_ok:
+        merged = _merge_candle_sets(primary=primary, secondary=secondary, limit=limit)
+        source = "coinbase_binance_merged"
+    elif primary_ok:
+        merged = primary
+        source = "coinbase_exchange"
+    elif secondary_ok:
+        merged = secondary
+        source = "binance_spot"
+    else:
         if cached:
             return "sqlite_cache_stale", cached
-        raise
+        raise RuntimeError(f"Unable to fetch candles from configured sources for {normalized_symbol}")
+
+    _save_candles(normalized_symbol, granularity, merged, source=source)
+    return source, merged
 
 
 async def get_ticker(symbol: str) -> TickerResponse:
