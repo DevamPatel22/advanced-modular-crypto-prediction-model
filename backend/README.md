@@ -115,6 +115,7 @@ Phases:
 - `phase1`: activates only `BTC-USD`, `ETH-USD`, `SOL-USD` entries that pass gates
 - `phase2`: activates previous active set + next batch (`--phase2-batch-size`, default 20)
 - `phase3`: activates all passed symbol+horizon entries
+  In bootstrap mode, phase1 additionally restricts promotions to short horizons from `BOOTSTRAP_PHASE1_HORIZONS` (default `5m,1h,6h,12h`).
 
 Promotion safety:
 
@@ -147,6 +148,7 @@ Reports:
 - Target schedule: daily (`RETRAIN_SCHEDULE_CRON`, default `0 2 * * *`)
 - Recommended ingestion depth for training readiness: `INGESTION_LIMIT_PER_SYMBOL=1500`
 - Staged stochastic gate control: `MARTINGALE_GATE_MODE=bootstrap|strict` (default: `bootstrap`)
+- Bootstrap short-horizon promotion set: `BOOTSTRAP_PHASE1_HORIZONS=5m,1h,6h,12h`
 - Flow:
   1. ingest latest candles
   2. train candidate version

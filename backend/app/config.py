@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     ingestion_cycle_seconds: int = 600
     retrain_schedule_cron: str = "0 2 * * *"
     martingale_gate_mode: str = "bootstrap"
+    bootstrap_phase1_horizons: str = "5m,1h,6h,12h"
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -10,7 +10,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from joblib import dump
-from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor, RandomForestRegressor
+from sklearn.ensemble import (
+    ExtraTreesRegressor,
+    GradientBoostingClassifier,
+    GradientBoostingRegressor,
+    HistGradientBoostingRegressor,
+    RandomForestRegressor,
+)
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -257,6 +263,42 @@ def _regression_candidates() -> list[tuple[str, Pipeline]]:
                             learning_rate=0.05,
                             max_depth=3,
                             random_state=42,
+                        ),
+                    ),
+                ]
+            ),
+        ),
+        (
+            "hist_gradient_boosting_regressor",
+            Pipeline(
+                steps=[
+                    ("imputer", SimpleImputer(strategy="median")),
+                    (
+                        "model",
+                        HistGradientBoostingRegressor(
+                            max_iter=350,
+                            learning_rate=0.04,
+                            max_depth=6,
+                            min_samples_leaf=8,
+                            random_state=42,
+                        ),
+                    ),
+                ]
+            ),
+        ),
+        (
+            "extra_trees_regressor",
+            Pipeline(
+                steps=[
+                    ("imputer", SimpleImputer(strategy="median")),
+                    (
+                        "model",
+                        ExtraTreesRegressor(
+                            n_estimators=350,
+                            max_depth=14,
+                            min_samples_leaf=3,
+                            random_state=42,
+                            n_jobs=-1,
                         ),
                     ),
                 ]

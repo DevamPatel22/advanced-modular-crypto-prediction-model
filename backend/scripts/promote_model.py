@@ -12,6 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.services.model_registry import ModelRegistry
+from app.config import get_settings
 
 
 def _read_json(path: Path) -> dict[str, object] | None:
@@ -48,6 +49,10 @@ def main() -> None:
         help="Batch size for phase2 activation",
     )
     args = parser.parse_args()
+    settings = get_settings()
+    bootstrap_horizons = {
+        item.strip() for item in settings.bootstrap_phase1_horizons.split(",") if item.strip()
+    }
 
     registry = ModelRegistry()
     current_active = registry.get_active_model_version()
@@ -69,6 +74,8 @@ def main() -> None:
 
         for metrics_file in sorted(symbol_dir.glob("metrics_*.json")):
             horizon = metrics_file.stem.replace("metrics_", "")
+            if args.phase == "phase1" and horizon not in bootstrap_horizons:
+                continue
             payload = _read_json(metrics_file)
             if payload is None:
                 failures.append({"symbol": symbol, "horizon": horizon, "reason": "invalid_metrics_json"})

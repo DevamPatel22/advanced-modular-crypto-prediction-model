@@ -22,6 +22,7 @@ Build a reliable, scalable prediction platform that can evolve from MVP analytic
 - All-symbol training and promotion scripts with per-horizon quality gates
 - Stochastic feature layer (GBM + Markov regime probabilities) and martingale residual diagnostic in promotion gate
 - Log-return regression target with clipped inverse transform and staged martingale gate (`bootstrap` to `strict`)
+- Bootstrap promotions now focus on short horizons first (`5m,1h,6h,12h`) for faster first qualified pairs
 - Interactive frontend with:
   - markets homepage (search by symbol or coin name)
   - asset detail page (line/candlestick, ranges, MA/EMA/VA toggles)
