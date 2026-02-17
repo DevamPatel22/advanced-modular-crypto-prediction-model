@@ -94,6 +94,8 @@ Promotion gate (must pass all):
 - regression `rmse < baseline.rmse`
 - martingale diagnostic `abs(residual_acf1) <= 0.10`
 
+Horizon data readiness uses adaptive minimum sample targets (short horizons require more history than long horizons) so early-stage training can activate qualified pairs sooner while still keeping gate checks strict.
+
 Baselines:
 
 - direction baseline: always-up
@@ -112,6 +114,10 @@ Phases:
 - `phase1`: activates only `BTC-USD`, `ETH-USD`, `SOL-USD` entries that pass gates
 - `phase2`: activates previous active set + next batch (`--phase2-batch-size`, default 20)
 - `phase3`: activates all passed symbol+horizon entries
+
+Promotion safety:
+
+- if a candidate produces `0` promoted pairs, active model version is preserved (no empty rollout)
 
 Any symbol+horizon without promoted artifacts automatically stays on fallback inference.
 
@@ -138,6 +144,7 @@ Reports:
 ## Retraining Cadence
 
 - Target schedule: daily (`RETRAIN_SCHEDULE_CRON`, default `0 2 * * *`)
+- Recommended ingestion depth for training readiness: `INGESTION_LIMIT_PER_SYMBOL=1500`
 - Flow:
   1. ingest latest candles
   2. train candidate version

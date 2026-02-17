@@ -33,6 +33,11 @@ def main() -> None:
     parser.add_argument("--phase2-batch-size", type=int, default=20, help="Batch size when phase2 is selected")
     parser.add_argument("--symbol-limit", type=int, default=2000, help="Universe fetch cap for training")
     parser.add_argument("--batch-size", type=int, default=20, help="Training progress batch size")
+    parser.add_argument(
+        "--symbols",
+        default="",
+        help="Optional comma-separated explicit symbol set for training",
+    )
     parser.add_argument("--skip-ingest", action="store_true", help="Skip pre-training ingestion cycle")
     parser.add_argument("--output-prefix", default="reports", help="Output folder for reports")
     args = parser.parse_args()
@@ -68,6 +73,8 @@ def main() -> None:
         "--batch-size",
         str(args.batch_size),
     ]
+    if args.symbols.strip():
+        train_cmd.extend(["--symbols", args.symbols.strip()])
     train_proc = _run_command(train_cmd)
     run_report["steps"].append(
         {

@@ -405,7 +405,7 @@ function App() {
     <div className="rh-app">
       <header className="rh-topbar">
         <div className="brand" onClick={() => setView("home")} role="button" tabIndex={0}>
-          Lapse Markets
+          Crypto Markets
         </div>
         <nav className="rh-nav">
           <a className={view === "home" ? "active" : ""} onClick={() => setView("home")}>

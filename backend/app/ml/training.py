@@ -30,6 +30,16 @@ from app.ml.features import FEATURE_COLUMNS, FEATURE_VERSION, HORIZON_SPECS, Hor
 
 MIN_SAMPLES = 320
 LOOKBACK_BUFFER = 50
+HORIZON_MIN_SAMPLES: dict[str, int] = {
+    "5m": 300,
+    "1h": 280,
+    "6h": 260,
+    "12h": 240,
+    "1d": 220,
+    "1w": 180,
+    "1mo": 140,
+    "3mo": 120,
+}
 
 
 @dataclass(frozen=True)
@@ -112,15 +122,20 @@ def _split_indices(length: int) -> tuple[int, int]:
     return train_end, val_end
 
 
-def resolve_horizon_data(symbol: str, spec: HorizonSpec, min_samples: int = MIN_SAMPLES) -> tuple[str, int, pd.DataFrame] | None:
+def min_samples_for_horizon(horizon: str) -> int:
+    return int(HORIZON_MIN_SAMPLES.get(horizon, MIN_SAMPLES))
+
+
+def resolve_horizon_data(symbol: str, spec: HorizonSpec, min_samples: int | None = None) -> tuple[str, int, pd.DataFrame] | None:
+    required = min_samples if min_samples is not None else min_samples_for_horizon(spec.label)
     for granularity, steps in spec.candidates:
         candidate = load_candles(symbol, granularity)
-        if len(candidate) >= (min_samples + steps + LOOKBACK_BUFFER):
+        if len(candidate) >= (required + steps + LOOKBACK_BUFFER):
             return granularity, steps, candidate
     return None
 
 
-def _prepare_supervised(df: pd.DataFrame, steps_ahead: int, min_samples: int = MIN_SAMPLES) -> tuple[pd.DataFrame, SplitData] | None:
+def _prepare_supervised(df: pd.DataFrame, steps_ahead: int, min_samples: int) -> tuple[pd.DataFrame, SplitData] | None:
     enriched = build_features(df)
     enriched["target_close"] = enriched["close"].shift(-steps_ahead)
     enriched["target_up"] = (enriched["target_close"] > enriched["close"]).astype(int)
@@ -325,17 +340,19 @@ def _martingale_residual_diagnostic(y_true_reg: np.ndarray, y_pred_reg: np.ndarr
 
 
 def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, models_root: Path, write_artifacts: bool = True) -> dict[str, object]:
-    resolved = resolve_horizon_data(symbol, spec)
+    min_samples = min_samples_for_horizon(spec.label)
+    resolved = resolve_horizon_data(symbol, spec, min_samples=min_samples)
     if resolved is None:
         return {
             "symbol": symbol,
             "horizon": spec.label,
             "status": "insufficient_data",
             "reason": "no_granularity_meets_minimum",
+            "required_min_samples": min_samples,
         }
 
     granularity, steps, frame = resolved
-    prepared = _prepare_supervised(frame, steps)
+    prepared = _prepare_supervised(frame, steps, min_samples=min_samples)
     if prepared is None:
         return {
             "symbol": symbol,
@@ -344,6 +361,7 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
             "reason": "insufficient_rows_after_feature_pipeline",
             "granularity": granularity,
             "steps_ahead": steps,
+            "required_min_samples": min_samples,
         }
 
     enriched, split = prepared

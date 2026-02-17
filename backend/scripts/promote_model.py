@@ -105,15 +105,22 @@ def main() -> None:
     else:
         promoted = passed_by_symbol
 
-    registry_payload = registry.promote_candidate(candidate_version=args.candidate, promoted=promoted)
+    promoted_pairs = sum(len(item) for item in promoted.values())
+    promoted_symbols = len(promoted)
+    kept_previous_active = promoted_pairs == 0
+    if kept_previous_active:
+        registry_payload = registry.read()
+    else:
+        registry_payload = registry.promote_candidate(candidate_version=args.candidate, promoted=promoted)
 
     report = {
         "generated_at": datetime.now(tz=UTC).isoformat(),
         "previous_active": current_active,
-        "new_active": args.candidate,
+        "new_active": current_active if kept_previous_active else args.candidate,
         "phase": args.phase,
-        "promoted_symbols": len(promoted),
-        "promoted_pairs": sum(len(item) for item in promoted.values()),
+        "promoted_symbols": promoted_symbols,
+        "promoted_pairs": promoted_pairs,
+        "kept_previous_active": kept_previous_active,
         "failed_pairs": failures,
         "registry_path": str(registry.registry_path),
         "registry": registry_payload,

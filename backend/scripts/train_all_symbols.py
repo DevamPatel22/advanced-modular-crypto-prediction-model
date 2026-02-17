@@ -27,6 +27,10 @@ async def _resolve_universe(limit: int) -> list[str]:
     in_db = set(list_symbols_with_any_candles(min_rows=100))
     return [symbol for symbol in by_market if symbol in in_db]
 
+def _parse_symbols(raw: str) -> list[str]:
+    symbols = [item.strip().upper() for item in raw.split(",") if item.strip()]
+    return sorted(set(symbols))
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train candidate models for all US-tradable USD crypto symbols")
@@ -38,9 +42,20 @@ def main() -> None:
     )
     parser.add_argument("--symbol-limit", type=int, default=2000, help="Universe fetch cap")
     parser.add_argument("--batch-size", type=int, default=20, help="Batch size used for progress sections")
+    parser.add_argument(
+        "--symbols",
+        default="",
+        help="Optional comma-separated explicit symbol set (example: BTC-USD,ETH-USD,SOL-USD)",
+    )
     args = parser.parse_args()
 
-    universe = asyncio.run(_resolve_universe(args.symbol_limit))
+    discovered_universe = asyncio.run(_resolve_universe(args.symbol_limit))
+    requested_symbols = _parse_symbols(args.symbols)
+    if requested_symbols:
+        allowed = set(discovered_universe)
+        universe = [symbol for symbol in requested_symbols if symbol in allowed]
+    else:
+        universe = discovered_universe
 
     models_root = PROJECT_ROOT / "data" / "models"
     reports_root = PROJECT_ROOT / "reports"
