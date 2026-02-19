@@ -1,3 +1,7 @@
+"""Copyright (c) 2026 Devam Patel. All rights reserved.
+Proprietary software. Unauthorized copying, modification, distribution, or use is prohibited.
+"""
+
 from __future__ import annotations
 
 import json

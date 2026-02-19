@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Devam Patel. All rights reserved.
+// Proprietary software. Unauthorized copying, modification, distribution, or use is prohibited.
+
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { fetchCandles, fetchPrediction, fetchTicker, fetchTradableSymbols, getApiBaseUrl } from "./lib/api";
 import type { CandleGranularity, CandlePoint, Horizon, PredictionResponse, Symbol } from "./types/prediction";

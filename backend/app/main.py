@@ -1,6 +1,10 @@
 from contextlib import asynccontextmanager
 import asyncio
 
+"""Copyright (c) 2026 Devam Patel. All rights reserved.
+Proprietary software. Unauthorized copying, modification, distribution, or use is prohibited.
+"""
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
