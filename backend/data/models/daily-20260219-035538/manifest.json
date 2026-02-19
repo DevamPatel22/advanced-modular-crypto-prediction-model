@@ -1,0 +1,10 @@
+{
+  "generated_at": "2026-02-19T03:58:13.171805+00:00",
+  "model_version": "daily-20260219-035538",
+  "feature_version": "v2",
+  "universe_count": 2,
+  "symbols": [
+    "BTC-USD",
+    "ETH-USD"
+  ]
+}

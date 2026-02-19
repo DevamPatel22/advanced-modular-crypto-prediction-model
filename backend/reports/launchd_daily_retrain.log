@@ -1,0 +1,110 @@
+{
+  "status": "ok",
+  "model_version": "daily-20260213-022207",
+  "active_before": "daily-20260213",
+  "active_after": "daily-20260213-022207",
+  "run_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/daily_retrain_daily-20260213-022207.json",
+  "summary_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/summary_report_daily-20260213-022207.json",
+  "promotion_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/promotion_report_daily-20260213-022207.json",
+  "ingestion_enabled": true
+}
+{
+  "status": "ok",
+  "model_version": "daily-20260213-022217",
+  "active_before": "daily-20260213-022207",
+  "active_after": "daily-20260213-022217",
+  "run_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/daily_retrain_daily-20260213-022217.json",
+  "summary_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/summary_report_daily-20260213-022217.json",
+  "promotion_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/promotion_report_daily-20260213-022217.json",
+  "ingestion_enabled": true
+}
+{
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "active_before": "daily-20260213-022217",
+  "active_after": "daily-20260213-022217",
+  "run_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/daily_retrain_daily-20260216-235424.json",
+  "summary_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/summary_report_daily-20260216-235424.json",
+  "promotion_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/promotion_report_daily-20260216-235424.json",
+  "ingestion_enabled": true
+}
+{
+  "status": "ok",
+  "model_version": "daily-20260217-000204",
+  "active_before": "daily-20260213-022217",
+  "active_after": "daily-20260213-022217",
+  "run_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/daily_retrain_daily-20260217-000204.json",
+  "summary_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/summary_report_daily-20260217-000204.json",
+  "promotion_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/promotion_report_daily-20260217-000204.json",
+  "ingestion_enabled": true
+}
+{
+  "status": "ok",
+  "model_version": "daily-20260217-000320",
+  "active_before": "daily-20260213-022217",
+  "active_after": "daily-20260213-022217",
+  "run_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/daily_retrain_daily-20260217-000320.json",
+  "summary_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/summary_report_daily-20260217-000320.json",
+  "promotion_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/promotion_report_daily-20260217-000320.json",
+  "ingestion_enabled": true
+}
+{
+  "status": "ok",
+  "model_version": "daily-20260217-144916",
+  "active_before": "daily-20260213-022217",
+  "active_after": "daily-20260213-022217",
+  "run_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/daily_retrain_daily-20260217-144916.json",
+  "summary_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/summary_report_daily-20260217-144916.json",
+  "promotion_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/promotion_report_daily-20260217-144916.json",
+  "ingestion_enabled": true
+}
+{
+  "status": "ok",
+  "model_version": "daily-20260217-203338",
+  "active_before": "daily-20260213-022217",
+  "active_after": "daily-20260213-022217",
+  "run_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/daily_retrain_daily-20260217-203338.json",
+  "summary_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/summary_report_daily-20260217-203338.json",
+  "promotion_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/promotion_report_daily-20260217-203338.json",
+  "ingestion_enabled": true
+}
+{
+  "status": "ok",
+  "model_version": "daily-20260218-024659",
+  "active_before": "daily-20260213-022217",
+  "active_after": "daily-20260213-022217",
+  "run_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/daily_retrain_daily-20260218-024659.json",
+  "summary_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/summary_report_daily-20260218-024659.json",
+  "promotion_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/promotion_report_daily-20260218-024659.json",
+  "ingestion_enabled": true
+}
+{
+  "status": "ok",
+  "model_version": "daily-20260218-184529",
+  "active_before": "daily-20260213-022217",
+  "active_after": "daily-20260218-184529",
+  "run_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/daily_retrain_daily-20260218-184529.json",
+  "summary_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/summary_report_daily-20260218-184529.json",
+  "promotion_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/promotion_report_daily-20260218-184529.json",
+  "ingestion_enabled": true
+}
+{
+  "status": "ok",
+  "model_version": "daily-20260219-035538",
+  "active_before": "daily-20260218-184529",
+  "active_after": "daily-20260219-035538",
+  "run_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/daily_retrain_daily-20260219-035538.json",
+  "summary_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/summary_report_daily-20260219-035538.json",
+  "promotion_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/promotion_report_daily-20260219-035538.json",
+  "ingestion_enabled": true
+}
+{
+  "status": "ok",
+  "model_version": "daily-20260219-050827",
+  "active_before": "daily-20260219-035538",
+  "active_after": "daily-20260219-050827",
+  "run_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/daily_retrain_daily-20260219-050827.json",
+  "summary_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/summary_report_daily-20260219-050827.json",
+  "promotion_report": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/promotion_report_daily-20260219-050827.json",
+  "ingestion_enabled": true
+}

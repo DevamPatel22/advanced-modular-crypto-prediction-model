@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-02-16T23:56:08.200496+00:00",
+  "symbol": "AERO-USD",
+  "horizon": "5m",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1m",
+  "steps_ahead": 5,
+  "rows_total": 872,
+  "rows_test": 131,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.5801526717557252,
+    "precision": 0.6056338028169014,
+    "recall": 0.6142857142857143,
+    "f1": 0.6099290780141844,
+    "roc_auc": 0.5337236533957845,
+    "mae": 0.008722651935124498,
+    "rmse": 0.010325989678495379,
+    "mape": 0.027330773921439153
+  },
+  "baseline": {
+    "accuracy": 0.5343511450381679,
+    "f1": 0.6965174129353234,
+    "rmse": 0.0008510698251778432,
+    "mae": 0.0006486259541984724,
+    "mape": 0.0020294959639305106
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.7061105108965717,
+    "variance": 3.7382816368169275e-05,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AERO-USD/cls_5m.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AERO-USD/reg_5m.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AERO-USD/calibration_5m.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AERO-USD/metrics_5m.json"
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "generated_at": "2026-02-16T23:57:13.496062+00:00",
+  "symbol": "CRV-USD",
+  "horizon": "1h",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1m",
+  "steps_ahead": 60,
+  "rows_total": 608,
+  "rows_test": 92,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "gradient_boosting_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.15217391304347827,
+    "precision": 0.10344827586206896,
+    "recall": 1.0,
+    "f1": 0.1875,
+    "roc_auc": 0.7617135207496654,
+    "mae": 0.009311049286917616,
+    "rmse": 0.009623715957461483,
+    "mape": 0.03660085879430496
+  },
+  "baseline": {
+    "accuracy": 0.09782608695652174,
+    "f1": 0.1782178217821782,
+    "rmse": 0.008525435090261425,
+    "mae": 0.0068565217391304365,
+    "mape": 0.0269409918408092
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.3738300214637996,
+    "variance": 6.305268408261451e-06,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CRV-USD/cls_1h.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CRV-USD/reg_1h.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CRV-USD/calibration_1h.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CRV-USD/metrics_1h.json"
+  }
+}

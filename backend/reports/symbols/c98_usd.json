@@ -1,0 +1,129 @@
+{
+  "symbol": "C98-USD",
+  "model_version": "daily-20260216-235424",
+  "horizons": {
+    "5m": {
+      "symbol": "C98-USD",
+      "horizon": "5m",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 300
+    },
+    "1h": {
+      "symbol": "C98-USD",
+      "horizon": "1h",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 280
+    },
+    "6h": {
+      "symbol": "C98-USD",
+      "horizon": "6h",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 260
+    },
+    "12h": {
+      "symbol": "C98-USD",
+      "horizon": "12h",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 240
+    },
+    "1d": {
+      "generated_at": "2026-02-16T23:57:04.409039+00:00",
+      "symbol": "C98-USD",
+      "horizon": "1d",
+      "status": "ok",
+      "model_version": "daily-20260216-235424",
+      "feature_version": "v2",
+      "granularity": "1h",
+      "steps_ahead": 24,
+      "rows_total": 242,
+      "rows_test": 37,
+      "selected_models": {
+        "classifier": "logistic_regression",
+        "regressor": "gradient_boosting_regressor"
+      },
+      "metrics": {
+        "accuracy": 0.08108108108108109,
+        "precision": 0.02857142857142857,
+        "recall": 1.0,
+        "f1": 0.05555555555555555,
+        "roc_auc": 0.6944444444444444,
+        "mae": 0.0029022736027241153,
+        "rmse": 0.0032739536045353684,
+        "mape": 0.0941006117338969
+      },
+      "baseline": {
+        "accuracy": 0.02702702702702703,
+        "f1": 0.05263157894736842,
+        "rmse": 0.0010945812478332104,
+        "mae": 0.0009378378378378385,
+        "mape": 0.030459445577458086
+      },
+      "martingale_diagnostic": {
+        "acf1": 0.8646399677584312,
+        "variance": 3.344927572267942e-06,
+        "pass": false
+      },
+      "promotion_gate": {
+        "passed": false,
+        "failed_reasons": [
+          "regression_rmse_not_below_baseline",
+          "martingale_residual_autocorrelation_too_high"
+        ],
+        "rules": {
+          "classification": [
+            "f1 > baseline.f1",
+            "accuracy > baseline.accuracy"
+          ],
+          "regression": [
+            "rmse < baseline.rmse"
+          ],
+          "stochastic": [
+            "abs(residual_acf1) <= 0.10"
+          ]
+        }
+      },
+      "artifact_paths": {
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/C98-USD/cls_1d.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/C98-USD/reg_1d.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/C98-USD/calibration_1d.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/C98-USD/metrics_1d.json"
+      },
+      "calibration": {
+        "method": "linear_scale",
+        "scale": 0.7,
+        "min_confidence": 0.5,
+        "max_confidence": 0.99
+      }
+    },
+    "1w": {
+      "symbol": "C98-USD",
+      "horizon": "1w",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 180
+    },
+    "1mo": {
+      "symbol": "C98-USD",
+      "horizon": "1mo",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 140
+    },
+    "3mo": {
+      "symbol": "C98-USD",
+      "horizon": "3mo",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 120
+    }
+  },
+  "summary": {
+    "passed": 0,
+    "failed": 1,
+    "insufficient": 7
+  }
+}

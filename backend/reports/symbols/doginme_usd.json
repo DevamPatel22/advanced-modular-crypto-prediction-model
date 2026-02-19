@@ -1,0 +1,129 @@
+{
+  "symbol": "DOGINME-USD",
+  "model_version": "daily-20260216-235424",
+  "horizons": {
+    "5m": {
+      "symbol": "DOGINME-USD",
+      "horizon": "5m",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 300
+    },
+    "1h": {
+      "symbol": "DOGINME-USD",
+      "horizon": "1h",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 280
+    },
+    "6h": {
+      "symbol": "DOGINME-USD",
+      "horizon": "6h",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 260
+    },
+    "12h": {
+      "symbol": "DOGINME-USD",
+      "horizon": "12h",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 240
+    },
+    "1d": {
+      "generated_at": "2026-02-16T23:57:21.939821+00:00",
+      "symbol": "DOGINME-USD",
+      "horizon": "1d",
+      "status": "ok",
+      "model_version": "daily-20260216-235424",
+      "feature_version": "v2",
+      "granularity": "1h",
+      "steps_ahead": 24,
+      "rows_total": 242,
+      "rows_test": 37,
+      "selected_models": {
+        "classifier": "logistic_regression",
+        "regressor": "random_forest_regressor"
+      },
+      "metrics": {
+        "accuracy": 0.918918918918919,
+        "precision": 0.8181818181818182,
+        "recall": 0.9,
+        "f1": 0.8571428571428571,
+        "roc_auc": 0.9333333333333333,
+        "mae": 1.0558008565193828e-05,
+        "rmse": 1.182839077691671e-05,
+        "mape": 0.09965304328493162
+      },
+      "baseline": {
+        "accuracy": 0.2702702702702703,
+        "f1": 0.425531914893617,
+        "rmse": 7.39649296005263e-06,
+        "mae": 5.92972972972973e-06,
+        "mape": 0.055977155384761335
+      },
+      "martingale_diagnostic": {
+        "acf1": 0.706971108145446,
+        "variance": 2.8439283508742062e-11,
+        "pass": false
+      },
+      "promotion_gate": {
+        "passed": false,
+        "failed_reasons": [
+          "regression_rmse_not_below_baseline",
+          "martingale_residual_autocorrelation_too_high"
+        ],
+        "rules": {
+          "classification": [
+            "f1 > baseline.f1",
+            "accuracy > baseline.accuracy"
+          ],
+          "regression": [
+            "rmse < baseline.rmse"
+          ],
+          "stochastic": [
+            "abs(residual_acf1) <= 0.10"
+          ]
+        }
+      },
+      "artifact_paths": {
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/DOGINME-USD/cls_1d.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/DOGINME-USD/reg_1d.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/DOGINME-USD/calibration_1d.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/DOGINME-USD/metrics_1d.json"
+      },
+      "calibration": {
+        "method": "linear_scale",
+        "scale": 1.0856317099619188,
+        "min_confidence": 0.5,
+        "max_confidence": 0.99
+      }
+    },
+    "1w": {
+      "symbol": "DOGINME-USD",
+      "horizon": "1w",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 180
+    },
+    "1mo": {
+      "symbol": "DOGINME-USD",
+      "horizon": "1mo",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 140
+    },
+    "3mo": {
+      "symbol": "DOGINME-USD",
+      "horizon": "3mo",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 120
+    }
+  },
+  "summary": {
+    "passed": 0,
+    "failed": 1,
+    "insufficient": 7
+  }
+}

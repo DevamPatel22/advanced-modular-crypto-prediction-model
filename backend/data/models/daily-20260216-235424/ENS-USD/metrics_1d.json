@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-02-16T23:57:30.883942+00:00",
+  "symbol": "ENS-USD",
+  "horizon": "1d",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1h",
+  "steps_ahead": 24,
+  "rows_total": 242,
+  "rows_test": 37,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.5135135135135135,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "roc_auc": 0.4125874125874126,
+    "mae": 0.8882321626196209,
+    "rmse": 0.9212269235168445,
+    "mape": 0.13142900620155948
+  },
+  "baseline": {
+    "accuracy": 0.2972972972972973,
+    "f1": 0.4583333333333333,
+    "rmse": 0.17357138884916198,
+    "mae": 0.1532432432432431,
+    "mape": 0.022796319708206312
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.838951498082495,
+    "variance": 0.059702669900381596,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ENS-USD/cls_1d.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ENS-USD/reg_1d.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ENS-USD/calibration_1d.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ENS-USD/metrics_1d.json"
+  }
+}

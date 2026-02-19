@@ -1,0 +1,63 @@
+{
+  "generated_at": "2026-02-13T02:13:58.675244+00:00",
+  "symbol": "BTC-USD",
+  "horizon": "1mo",
+  "status": "ok",
+  "model_version": "daily-20260213",
+  "feature_version": "v2",
+  "granularity": "1d",
+  "steps_ahead": 30,
+  "rows_total": 1441,
+  "rows_test": 217,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "gradient_boosting_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.5299539170506913,
+    "precision": 0.43037974683544306,
+    "recall": 0.85,
+    "f1": 0.5714285714285714,
+    "roc_auc": 0.6049270072992701,
+    "mae": 43817.59223083773,
+    "rmse": 47172.96911878749,
+    "mape": 0.41582106239505756
+  },
+  "baseline": {
+    "accuracy": 0.3686635944700461,
+    "f1": 0.5387205387205387,
+    "rmse": 11076.861378003849,
+    "mae": 8545.922672811059,
+    "mape": 0.09021364748983425
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.6558464088386978,
+    "variance": 305851634.37571275,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260213/BTC-USD/cls_1mo.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260213/BTC-USD/reg_1mo.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260213/BTC-USD/calibration_1mo.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260213/BTC-USD/metrics_1mo.json"
+  }
+}

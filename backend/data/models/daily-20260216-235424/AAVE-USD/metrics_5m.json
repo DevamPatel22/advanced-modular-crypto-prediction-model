@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-02-16T23:56:00.715067+00:00",
+  "symbol": "AAVE-USD",
+  "horizon": "5m",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1m",
+  "steps_ahead": 5,
+  "rows_total": 1027,
+  "rows_test": 155,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "gradient_boosting_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.5225806451612903,
+    "precision": 0.5304347826086957,
+    "recall": 0.7530864197530864,
+    "f1": 0.6224489795918368,
+    "roc_auc": 0.47230563897230565,
+    "mae": 14.016948479762231,
+    "rmse": 14.794458300490051,
+    "mape": 0.11075553594612339
+  },
+  "baseline": {
+    "accuracy": 0.5225806451612903,
+    "f1": 0.6864406779661016,
+    "rmse": 0.2762735904392472,
+    "mae": 0.21154838709677332,
+    "mape": 0.0016712008756812145
+  },
+  "martingale_diagnostic": {
+    "acf1": -0.05678263746962179,
+    "variance": 24.551616838585375,
+    "pass": true
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "classification_accuracy_not_above_baseline",
+      "regression_rmse_not_below_baseline"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AAVE-USD/cls_5m.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AAVE-USD/reg_5m.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AAVE-USD/calibration_5m.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AAVE-USD/metrics_5m.json"
+  }
+}

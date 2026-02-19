@@ -1,0 +1,6 @@
+{
+  "method": "linear_scale",
+  "scale": 0.8119320080783777,
+  "min_confidence": 0.5,
+  "max_confidence": 0.99
+}

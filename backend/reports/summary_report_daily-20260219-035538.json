@@ -1,0 +1,1022 @@
+{
+  "generated_at": "2026-02-19T03:57:42.859176+00:00",
+  "model_version": "daily-20260219-035538",
+  "feature_version": "v2",
+  "training_universe": {
+    "count": 2,
+    "symbols": [
+      "BTC-USD",
+      "ETH-USD"
+    ]
+  },
+  "promotion_gate": {
+    "classification": [
+      "f1 > baseline.f1",
+      "accuracy > baseline.accuracy"
+    ],
+    "regression": [
+      "rmse < baseline.rmse"
+    ],
+    "stochastic": [
+      "abs(residual_acf1) <= 0.10"
+    ]
+  },
+  "symbols": {
+    "BTC-USD": {
+      "symbol": "BTC-USD",
+      "model_version": "daily-20260219-035538",
+      "horizons": {
+        "5m": {
+          "generated_at": "2026-02-19T03:57:47.399724+00:00",
+          "symbol": "BTC-USD",
+          "horizon": "5m",
+          "status": "ok",
+          "model_version": "daily-20260219-035538",
+          "feature_version": "v2",
+          "granularity": "1m",
+          "steps_ahead": 5,
+          "rows_total": 2128,
+          "rows_test": 320,
+          "selected_models": {
+            "classifier": "logistic_regression",
+            "regressor": "random_forest_regressor"
+          },
+          "metrics": {
+            "accuracy": 0.575,
+            "precision": 0.6145251396648045,
+            "recall": 0.6214689265536724,
+            "f1": 0.6179775280898876,
+            "roc_auc": 0.5864248745604679,
+            "mae": 72.63889423122123,
+            "rmse": 107.01449678047905,
+            "mape": 0.0010876129163893942
+          },
+          "baseline": {
+            "accuracy": 0.553125,
+            "f1": 0.7122736418511066,
+            "rmse": 106.60061068510605,
+            "mae": 73.18421874999963,
+            "mape": 0.001095514945222978
+          },
+          "martingale_diagnostic": {
+            "acf1": 0.8104628248359882,
+            "variance": 11272.014102537854,
+            "pass": false
+          },
+          "martingale_enforced": false,
+          "regression_target": "log_return",
+          "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+          "log_return_clip": 0.08,
+          "promotion_gate": {
+            "passed": false,
+            "failed_reasons": [
+              "classification_f1_not_above_baseline",
+              "regression_rmse_not_below_baseline"
+            ],
+            "rules": {
+              "classification": [
+                "f1 > baseline.f1",
+                "accuracy > baseline.accuracy"
+              ],
+              "regression": [
+                "rmse < baseline.rmse"
+              ],
+              "stochastic": [
+                "abs(residual_acf1) <= 0.10 (strict mode only)"
+              ]
+            }
+          },
+          "artifact_paths": {
+            "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/cls_5m.joblib",
+            "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/reg_5m.joblib",
+            "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/calibration_5m.json",
+            "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/metrics_5m.json"
+          },
+          "calibration": {
+            "method": "linear_scale",
+            "scale": 1.0377866635856083,
+            "min_confidence": 0.5,
+            "max_confidence": 0.99
+          }
+        },
+        "1h": {
+          "generated_at": "2026-02-19T03:57:49.414427+00:00",
+          "symbol": "BTC-USD",
+          "horizon": "1h",
+          "status": "ok",
+          "model_version": "daily-20260219-035538",
+          "feature_version": "v2",
+          "granularity": "1h",
+          "steps_ahead": 1,
+          "rows_total": 818,
+          "rows_test": 123,
+          "selected_models": {
+            "classifier": "gradient_boosting_classifier",
+            "regressor": "extra_trees_regressor"
+          },
+          "metrics": {
+            "accuracy": 0.5528455284552846,
+            "precision": 0.5538461538461539,
+            "recall": 0.5806451612903226,
+            "f1": 0.5669291338582677,
+            "roc_auc": 0.5322580645161291,
+            "mae": 251.5730722364371,
+            "rmse": 368.4523530707615,
+            "mape": 0.003677734775546315
+          },
+          "baseline": {
+            "accuracy": 0.5040650406504065,
+            "f1": 0.6702702702702703,
+            "rmse": 349.3929959729569,
+            "mae": 236.9995934959353,
+            "mape": 0.003464053679912203
+          },
+          "martingale_diagnostic": {
+            "acf1": -0.21022266489371477,
+            "variance": 135646.8995084355,
+            "pass": false
+          },
+          "martingale_enforced": false,
+          "regression_target": "log_return",
+          "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+          "log_return_clip": 0.18,
+          "promotion_gate": {
+            "passed": false,
+            "failed_reasons": [
+              "classification_f1_not_above_baseline",
+              "regression_rmse_not_below_baseline"
+            ],
+            "rules": {
+              "classification": [
+                "f1 > baseline.f1",
+                "accuracy > baseline.accuracy"
+              ],
+              "regression": [
+                "rmse < baseline.rmse"
+              ],
+              "stochastic": [
+                "abs(residual_acf1) <= 0.10 (strict mode only)"
+              ]
+            }
+          },
+          "artifact_paths": {
+            "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/cls_1h.joblib",
+            "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/reg_1h.joblib",
+            "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/calibration_1h.json",
+            "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/metrics_1h.json"
+          },
+          "calibration": {
+            "method": "linear_scale",
+            "scale": 0.9246705486519593,
+            "min_confidence": 0.5,
+            "max_confidence": 0.99
+          }
+        },
+        "6h": {
+          "generated_at": "2026-02-19T03:57:51.416411+00:00",
+          "symbol": "BTC-USD",
+          "horizon": "6h",
+          "status": "ok",
+          "model_version": "daily-20260219-035538",
+          "feature_version": "v2",
+          "granularity": "1h",
+          "steps_ahead": 6,
+          "rows_total": 813,
+          "rows_test": 122,
+          "selected_models": {
+            "classifier": "gradient_boosting_classifier",
+            "regressor": "gradient_boosting_regressor"
+          },
+          "metrics": {
+            "accuracy": 0.5491803278688525,
+            "precision": 0.5,
+            "recall": 0.34545454545454546,
+            "f1": 0.40860215053763443,
+            "roc_auc": 0.5221166892808683,
+            "mae": 675.684031272644,
+            "rmse": 856.0976686826505,
+            "mape": 0.009879414425416944
+          },
+          "baseline": {
+            "accuracy": 0.45081967213114754,
+            "f1": 0.6214689265536724,
+            "rmse": 701.216726080052,
+            "mae": 551.2498360655741,
+            "mape": 0.00806751172030582
+          },
+          "martingale_diagnostic": {
+            "acf1": 0.5082954453481779,
+            "variance": 724298.4497815237,
+            "pass": false
+          },
+          "martingale_enforced": false,
+          "regression_target": "log_return",
+          "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+          "log_return_clip": 0.35,
+          "promotion_gate": {
+            "passed": false,
+            "failed_reasons": [
+              "classification_f1_not_above_baseline",
+              "regression_rmse_not_below_baseline"
+            ],
+            "rules": {
+              "classification": [
+                "f1 > baseline.f1",
+                "accuracy > baseline.accuracy"
+              ],
+              "regression": [
+                "rmse < baseline.rmse"
+              ],
+              "stochastic": [
+                "abs(residual_acf1) <= 0.10 (strict mode only)"
+              ]
+            }
+          },
+          "artifact_paths": {
+            "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/cls_6h.joblib",
+            "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/reg_6h.joblib",
+            "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/calibration_6h.json",
+            "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/metrics_6h.json"
+          },
+          "calibration": {
+            "method": "linear_scale",
+            "scale": 0.7538282895001843,
+            "min_confidence": 0.5,
+            "max_confidence": 0.99
+          }
+        },
+        "12h": {
+          "generated_at": "2026-02-19T03:57:53.442989+00:00",
+          "symbol": "BTC-USD",
+          "horizon": "12h",
+          "status": "ok",
+          "model_version": "daily-20260219-035538",
+          "feature_version": "v2",
+          "granularity": "1h",
+          "steps_ahead": 12,
+          "rows_total": 807,
+          "rows_test": 122,
+          "selected_models": {
+            "classifier": "gradient_boosting_classifier",
+            "regressor": "extra_trees_regressor"
+          },
+          "metrics": {
+            "accuracy": 0.45081967213114754,
+            "precision": 0.4155844155844156,
+            "recall": 0.5925925925925926,
+            "f1": 0.48854961832061067,
+            "roc_auc": 0.43368736383442263,
+            "mae": 813.8456430369221,
+            "rmse": 1009.6364129645196,
+            "mape": 0.01188156441816137
+          },
+          "baseline": {
+            "accuracy": 0.4426229508196721,
+            "f1": 0.6136363636363636,
+            "rmse": 821.3267698284799,
+            "mae": 648.796803278688,
+            "mape": 0.009502522199548651
+          },
+          "martingale_diagnostic": {
+            "acf1": 0.7029926107884221,
+            "variance": 1011417.0348021579,
+            "pass": false
+          },
+          "martingale_enforced": false,
+          "regression_target": "log_return",
+          "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+          "log_return_clip": 0.5,
+          "promotion_gate": {
+            "passed": false,
+            "failed_reasons": [
+              "classification_f1_not_above_baseline",
+              "regression_rmse_not_below_baseline"
+            ],
+            "rules": {
+              "classification": [
+                "f1 > baseline.f1",
+                "accuracy > baseline.accuracy"
+              ],
+              "regression": [
+                "rmse < baseline.rmse"
+              ],
+              "stochastic": [
+                "abs(residual_acf1) <= 0.10 (strict mode only)"
+              ]
+            }
+          },
+          "artifact_paths": {
+            "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/cls_12h.joblib",
+            "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/reg_12h.joblib",
+            "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/calibration_12h.json",
+            "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/metrics_12h.json"
+          },
+          "calibration": {
+            "method": "linear_scale",
+            "scale": 0.7,
+            "min_confidence": 0.5,
+            "max_confidence": 0.99
+          }
+        },
+        "1d": {
+          "generated_at": "2026-02-19T03:57:55.423517+00:00",
+          "symbol": "BTC-USD",
+          "horizon": "1d",
+          "status": "ok",
+          "model_version": "daily-20260219-035538",
+          "feature_version": "v2",
+          "granularity": "1h",
+          "steps_ahead": 24,
+          "rows_total": 795,
+          "rows_test": 120,
+          "selected_models": {
+            "classifier": "logistic_regression",
+            "regressor": "extra_trees_regressor"
+          },
+          "metrics": {
+            "accuracy": 0.5583333333333333,
+            "precision": 0.3103448275862069,
+            "recall": 0.21428571428571427,
+            "f1": 0.2535211267605634,
+            "roc_auc": 0.43986568986568986,
+            "mae": 1290.5796629805734,
+            "rmse": 1796.1431302569895,
+            "mape": 0.018660797615153157
+          },
+          "baseline": {
+            "accuracy": 0.35,
+            "f1": 0.5185185185185185,
+            "rmse": 1254.9600804202225,
+            "mae": 1012.0494999999994,
+            "mape": 0.014752997751085965
+          },
+          "martingale_diagnostic": {
+            "acf1": 0.8863062341915244,
+            "variance": 2569944.430183512,
+            "pass": false
+          },
+          "martingale_enforced": false,
+          "regression_target": "log_return",
+          "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+          "log_return_clip": 0.75,
+          "promotion_gate": {
+            "passed": false,
+            "failed_reasons": [
+              "classification_f1_not_above_baseline",
+              "regression_rmse_not_below_baseline"
+            ],
+            "rules": {
+              "classification": [
+                "f1 > baseline.f1",
+                "accuracy > baseline.accuracy"
+              ],
+              "regression": [
+                "rmse < baseline.rmse"
+              ],
+              "stochastic": [
+                "abs(residual_acf1) <= 0.10 (strict mode only)"
+              ]
+            }
+          },
+          "artifact_paths": {
+            "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/cls_1d.joblib",
+            "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/reg_1d.joblib",
+            "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/calibration_1d.json",
+            "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/metrics_1d.json"
+          },
+          "calibration": {
+            "method": "linear_scale",
+            "scale": 0.9243499945224436,
+            "min_confidence": 0.5,
+            "max_confidence": 0.99
+          }
+        },
+        "1w": {
+          "generated_at": "2026-02-19T03:57:58.543900+00:00",
+          "symbol": "BTC-USD",
+          "horizon": "1w",
+          "status": "ok",
+          "model_version": "daily-20260219-035538",
+          "feature_version": "v2",
+          "granularity": "1d",
+          "steps_ahead": 7,
+          "rows_total": 1470,
+          "rows_test": 221,
+          "selected_models": {
+            "classifier": "logistic_regression",
+            "regressor": "extra_trees_regressor"
+          },
+          "metrics": {
+            "accuracy": 0.4660633484162896,
+            "precision": 0.3867924528301887,
+            "recall": 0.43617021276595747,
+            "f1": 0.41,
+            "roc_auc": 0.46146758250963316,
+            "mae": 5496.256669817364,
+            "rmse": 7280.821019578266,
+            "mape": 0.057464001022531824
+          },
+          "baseline": {
+            "accuracy": 0.4253393665158371,
+            "f1": 0.5968253968253968,
+            "rmse": 5781.287516694902,
+            "mae": 4446.084072398189,
+            "mape": 0.045880579728455176
+          },
+          "martingale_diagnostic": {
+            "acf1": 0.7906004596562092,
+            "variance": 44081481.31888658,
+            "pass": false
+          },
+          "martingale_enforced": false,
+          "regression_target": "log_return",
+          "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+          "log_return_clip": 1.25,
+          "promotion_gate": {
+            "passed": false,
+            "failed_reasons": [
+              "classification_f1_not_above_baseline",
+              "regression_rmse_not_below_baseline"
+            ],
+            "rules": {
+              "classification": [
+                "f1 > baseline.f1",
+                "accuracy > baseline.accuracy"
+              ],
+              "regression": [
+                "rmse < baseline.rmse"
+              ],
+              "stochastic": [
+                "abs(residual_acf1) <= 0.10 (strict mode only)"
+              ]
+            }
+          },
+          "artifact_paths": {
+            "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/cls_1w.joblib",
+            "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/reg_1w.joblib",
+            "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/calibration_1w.json",
+            "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/metrics_1w.json"
+          },
+          "calibration": {
+            "method": "linear_scale",
+            "scale": 0.8397949983694868,
+            "min_confidence": 0.5,
+            "max_confidence": 0.99
+          }
+        },
+        "1mo": {
+          "generated_at": "2026-02-19T03:58:01.612609+00:00",
+          "symbol": "BTC-USD",
+          "horizon": "1mo",
+          "status": "ok",
+          "model_version": "daily-20260219-035538",
+          "feature_version": "v2",
+          "granularity": "1d",
+          "steps_ahead": 30,
+          "rows_total": 1447,
+          "rows_test": 218,
+          "selected_models": {
+            "classifier": "gradient_boosting_classifier",
+            "regressor": "gradient_boosting_regressor"
+          },
+          "metrics": {
+            "accuracy": 0.48623853211009177,
+            "precision": 0.3905325443786982,
+            "recall": 0.88,
+            "f1": 0.5409836065573771,
+            "roc_auc": 0.6100699300699302,
+            "mae": 13808.580330760487,
+            "rmse": 18233.706678399492,
+            "mape": 0.14967688505788126
+          },
+          "baseline": {
+            "accuracy": 0.3440366972477064,
+            "f1": 0.5119453924914675,
+            "rmse": 11648.615007350296,
+            "mae": 8905.709220183486,
+            "mape": 0.0974092233661704
+          },
+          "martingale_diagnostic": {
+            "acf1": 0.692323866061532,
+            "variance": 206956061.61033076,
+            "pass": false
+          },
+          "martingale_enforced": false,
+          "regression_target": "log_return",
+          "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+          "log_return_clip": 1.75,
+          "promotion_gate": {
+            "passed": false,
+            "failed_reasons": [
+              "regression_rmse_not_below_baseline"
+            ],
+            "rules": {
+              "classification": [
+                "f1 > baseline.f1",
+                "accuracy > baseline.accuracy"
+              ],
+              "regression": [
+                "rmse < baseline.rmse"
+              ],
+              "stochastic": [
+                "abs(residual_acf1) <= 0.10 (strict mode only)"
+              ]
+            }
+          },
+          "artifact_paths": {
+            "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/cls_1mo.joblib",
+            "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/reg_1mo.joblib",
+            "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/calibration_1mo.json",
+            "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/metrics_1mo.json"
+          },
+          "calibration": {
+            "method": "linear_scale",
+            "scale": 0.7173128467183343,
+            "min_confidence": 0.5,
+            "max_confidence": 0.99
+          }
+        },
+        "3mo": {
+          "generated_at": "2026-02-19T03:58:04.556176+00:00",
+          "symbol": "BTC-USD",
+          "horizon": "3mo",
+          "status": "ok",
+          "model_version": "daily-20260219-035538",
+          "feature_version": "v2",
+          "granularity": "1d",
+          "steps_ahead": 90,
+          "rows_total": 1387,
+          "rows_test": 209,
+          "selected_models": {
+            "classifier": "gradient_boosting_classifier",
+            "regressor": "gradient_boosting_regressor"
+          },
+          "metrics": {
+            "accuracy": 0.46411483253588515,
+            "precision": 0.34210526315789475,
+            "recall": 0.5131578947368421,
+            "f1": 0.4105263157894737,
+            "roc_auc": 0.5326474079936684,
+            "mae": 20698.751122542446,
+            "rmse": 25563.068283460027,
+            "mape": 0.22093888075703064
+          },
+          "baseline": {
+            "accuracy": 0.36363636363636365,
+            "f1": 0.5333333333333333,
+            "rmse": 19179.001151474975,
+            "mae": 16814.118564593304,
+            "mape": 0.1839396954275156
+          },
+          "martingale_diagnostic": {
+            "acf1": 0.6175427647603839,
+            "variance": 540245704.9156985,
+            "pass": false
+          },
+          "martingale_enforced": false,
+          "regression_target": "log_return",
+          "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+          "log_return_clip": 2.5,
+          "promotion_gate": {
+            "passed": false,
+            "failed_reasons": [
+              "classification_f1_not_above_baseline",
+              "regression_rmse_not_below_baseline"
+            ],
+            "rules": {
+              "classification": [
+                "f1 > baseline.f1",
+                "accuracy > baseline.accuracy"
+              ],
+              "regression": [
+                "rmse < baseline.rmse"
+              ],
+              "stochastic": [
+                "abs(residual_acf1) <= 0.10 (strict mode only)"
+              ]
+            }
+          },
+          "artifact_paths": {
+            "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/cls_3mo.joblib",
+            "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/reg_3mo.joblib",
+            "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/calibration_3mo.json",
+            "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/BTC-USD/metrics_3mo.json"
+          },
+          "calibration": {
+            "method": "linear_scale",
+            "scale": 0.7,
+            "min_confidence": 0.5,
+            "max_confidence": 0.99
+          }
+        }
+      },
+      "summary": {
+        "passed": 0,
+        "failed": 8,
+        "insufficient": 0
+      }
+    },
+    "ETH-USD": {
+      "symbol": "ETH-USD",
+      "model_version": "daily-20260219-035538",
+      "horizons": {
+        "5m": {
+          "generated_at": "2026-02-19T03:58:08.719590+00:00",
+          "symbol": "ETH-USD",
+          "horizon": "5m",
+          "status": "ok",
+          "model_version": "daily-20260219-035538",
+          "feature_version": "v2",
+          "granularity": "1m",
+          "steps_ahead": 5,
+          "rows_total": 2078,
+          "rows_test": 312,
+          "selected_models": {
+            "classifier": "gradient_boosting_classifier",
+            "regressor": "random_forest_regressor"
+          },
+          "metrics": {
+            "accuracy": 0.5352564102564102,
+            "precision": 0.5660377358490566,
+            "recall": 0.5421686746987951,
+            "f1": 0.5538461538461539,
+            "roc_auc": 0.5566100016504374,
+            "mae": 2.805588768150916,
+            "rmse": 3.9787680708510336,
+            "mape": 0.0014269505533090173
+          },
+          "baseline": {
+            "accuracy": 0.532051282051282,
+            "f1": 0.694560669456067,
+            "rmse": 3.8827844885617018,
+            "mae": 2.7733333333333374,
+            "mape": 0.0014101429346999432
+          },
+          "martingale_diagnostic": {
+            "acf1": 0.769881037444509,
+            "variance": 15.818908817894286,
+            "pass": false
+          },
+          "martingale_enforced": false,
+          "regression_target": "log_return",
+          "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+          "log_return_clip": 0.08,
+          "promotion_gate": {
+            "passed": false,
+            "failed_reasons": [
+              "classification_f1_not_above_baseline",
+              "regression_rmse_not_below_baseline"
+            ],
+            "rules": {
+              "classification": [
+                "f1 > baseline.f1",
+                "accuracy > baseline.accuracy"
+              ],
+              "regression": [
+                "rmse < baseline.rmse"
+              ],
+              "stochastic": [
+                "abs(residual_acf1) <= 0.10 (strict mode only)"
+              ]
+            }
+          },
+          "artifact_paths": {
+            "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/cls_5m.joblib",
+            "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/reg_5m.joblib",
+            "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/calibration_5m.json",
+            "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/metrics_5m.json"
+          },
+          "calibration": {
+            "method": "linear_scale",
+            "scale": 0.870013640628741,
+            "min_confidence": 0.5,
+            "max_confidence": 0.99
+          }
+        },
+        "1h": {
+          "generated_at": "2026-02-19T03:58:09.854553+00:00",
+          "symbol": "ETH-USD",
+          "horizon": "1h",
+          "status": "ok",
+          "model_version": "daily-20260219-035538",
+          "feature_version": "v2",
+          "granularity": "1h",
+          "steps_ahead": 1,
+          "rows_total": 317,
+          "rows_test": 48,
+          "selected_models": {
+            "classifier": "gradient_boosting_classifier",
+            "regressor": "random_forest_regressor"
+          },
+          "metrics": {
+            "accuracy": 0.4166666666666667,
+            "precision": 0.4827586206896552,
+            "recall": 0.5185185185185185,
+            "f1": 0.5,
+            "roc_auc": 0.37037037037037035,
+            "mae": 10.683628382760668,
+            "rmse": 14.820118257332647,
+            "mape": 0.005406949831329812
+          },
+          "baseline": {
+            "accuracy": 0.5625,
+            "f1": 0.72,
+            "rmse": 12.233533575790762,
+            "mae": 8.893541666666673,
+            "mape": 0.004500406766085347
+          },
+          "martingale_diagnostic": {
+            "acf1": -0.35956008426845365,
+            "variance": 218.06244727638827,
+            "pass": false
+          },
+          "martingale_enforced": false,
+          "regression_target": "log_return",
+          "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+          "log_return_clip": 0.18,
+          "promotion_gate": {
+            "passed": false,
+            "failed_reasons": [
+              "classification_f1_not_above_baseline",
+              "classification_accuracy_not_above_baseline",
+              "regression_rmse_not_below_baseline"
+            ],
+            "rules": {
+              "classification": [
+                "f1 > baseline.f1",
+                "accuracy > baseline.accuracy"
+              ],
+              "regression": [
+                "rmse < baseline.rmse"
+              ],
+              "stochastic": [
+                "abs(residual_acf1) <= 0.10 (strict mode only)"
+              ]
+            }
+          },
+          "artifact_paths": {
+            "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/cls_1h.joblib",
+            "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/reg_1h.joblib",
+            "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/calibration_1h.json",
+            "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/metrics_1h.json"
+          },
+          "calibration": {
+            "method": "linear_scale",
+            "scale": 0.7,
+            "min_confidence": 0.5,
+            "max_confidence": 0.99
+          }
+        },
+        "6h": {
+          "generated_at": "2026-02-19T03:58:10.970039+00:00",
+          "symbol": "ETH-USD",
+          "horizon": "6h",
+          "status": "ok",
+          "model_version": "daily-20260219-035538",
+          "feature_version": "v2",
+          "granularity": "1h",
+          "steps_ahead": 6,
+          "rows_total": 312,
+          "rows_test": 47,
+          "selected_models": {
+            "classifier": "gradient_boosting_classifier",
+            "regressor": "random_forest_regressor"
+          },
+          "metrics": {
+            "accuracy": 0.425531914893617,
+            "precision": 0.3902439024390244,
+            "recall": 0.8888888888888888,
+            "f1": 0.5423728813559322,
+            "roc_auc": 0.4022988505747126,
+            "mae": 21.629553098733357,
+            "rmse": 24.937205688906044,
+            "mape": 0.010960431440854932
+          },
+          "baseline": {
+            "accuracy": 0.3829787234042553,
+            "f1": 0.5538461538461539,
+            "rmse": 24.23687440350061,
+            "mae": 20.5927659574468,
+            "mape": 0.01042196073898022
+          },
+          "martingale_diagnostic": {
+            "acf1": 0.5189303951705578,
+            "variance": 478.3826768421281,
+            "pass": false
+          },
+          "martingale_enforced": false,
+          "regression_target": "log_return",
+          "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+          "log_return_clip": 0.35,
+          "promotion_gate": {
+            "passed": false,
+            "failed_reasons": [
+              "classification_f1_not_above_baseline",
+              "regression_rmse_not_below_baseline"
+            ],
+            "rules": {
+              "classification": [
+                "f1 > baseline.f1",
+                "accuracy > baseline.accuracy"
+              ],
+              "regression": [
+                "rmse < baseline.rmse"
+              ],
+              "stochastic": [
+                "abs(residual_acf1) <= 0.10 (strict mode only)"
+              ]
+            }
+          },
+          "artifact_paths": {
+            "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/cls_6h.joblib",
+            "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/reg_6h.joblib",
+            "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/calibration_6h.json",
+            "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/metrics_6h.json"
+          },
+          "calibration": {
+            "method": "linear_scale",
+            "scale": 0.7,
+            "min_confidence": 0.5,
+            "max_confidence": 0.99
+          }
+        },
+        "12h": {
+          "generated_at": "2026-02-19T03:58:12.085004+00:00",
+          "symbol": "ETH-USD",
+          "horizon": "12h",
+          "status": "ok",
+          "model_version": "daily-20260219-035538",
+          "feature_version": "v2",
+          "granularity": "1h",
+          "steps_ahead": 12,
+          "rows_total": 306,
+          "rows_test": 46,
+          "selected_models": {
+            "classifier": "gradient_boosting_classifier",
+            "regressor": "extra_trees_regressor"
+          },
+          "metrics": {
+            "accuracy": 0.6739130434782609,
+            "precision": 0.5625,
+            "recall": 0.9473684210526315,
+            "f1": 0.7058823529411765,
+            "roc_auc": 0.8128654970760234,
+            "mae": 19.666820029886278,
+            "rmse": 24.894943953457354,
+            "mape": 0.009986967549393256
+          },
+          "baseline": {
+            "accuracy": 0.41304347826086957,
+            "f1": 0.5846153846153846,
+            "rmse": 29.806339419076874,
+            "mae": 23.210434782608683,
+            "mape": 0.01179002514573384
+          },
+          "martingale_diagnostic": {
+            "acf1": 0.4049127537825025,
+            "variance": 543.7600224904022,
+            "pass": false
+          },
+          "martingale_enforced": false,
+          "regression_target": "log_return",
+          "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+          "log_return_clip": 0.5,
+          "promotion_gate": {
+            "passed": true,
+            "failed_reasons": [],
+            "rules": {
+              "classification": [
+                "f1 > baseline.f1",
+                "accuracy > baseline.accuracy"
+              ],
+              "regression": [
+                "rmse < baseline.rmse"
+              ],
+              "stochastic": [
+                "abs(residual_acf1) <= 0.10 (strict mode only)"
+              ]
+            }
+          },
+          "artifact_paths": {
+            "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/cls_12h.joblib",
+            "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/reg_12h.joblib",
+            "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/calibration_12h.json",
+            "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/metrics_12h.json"
+          },
+          "calibration": {
+            "method": "linear_scale",
+            "scale": 0.8597253536395613,
+            "min_confidence": 0.5,
+            "max_confidence": 0.99
+          }
+        },
+        "1d": {
+          "generated_at": "2026-02-19T03:58:13.137791+00:00",
+          "symbol": "ETH-USD",
+          "horizon": "1d",
+          "status": "ok",
+          "model_version": "daily-20260219-035538",
+          "feature_version": "v2",
+          "granularity": "1h",
+          "steps_ahead": 24,
+          "rows_total": 294,
+          "rows_test": 45,
+          "selected_models": {
+            "classifier": "gradient_boosting_classifier",
+            "regressor": "random_forest_regressor"
+          },
+          "metrics": {
+            "accuracy": 0.6222222222222222,
+            "precision": 0.5757575757575758,
+            "recall": 0.8636363636363636,
+            "f1": 0.6909090909090909,
+            "roc_auc": 0.6482213438735178,
+            "mae": 27.367722028584176,
+            "rmse": 34.365017001943784,
+            "mape": 0.013908112172417286
+          },
+          "baseline": {
+            "accuracy": 0.4888888888888889,
+            "f1": 0.6567164179104478,
+            "rmse": 26.26843953407882,
+            "mae": 21.46399999999999,
+            "mape": 0.010879935628186234
+          },
+          "martingale_diagnostic": {
+            "acf1": 0.5196097144860236,
+            "variance": 746.0397356482035,
+            "pass": false
+          },
+          "martingale_enforced": false,
+          "regression_target": "log_return",
+          "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+          "log_return_clip": 0.75,
+          "promotion_gate": {
+            "passed": false,
+            "failed_reasons": [
+              "regression_rmse_not_below_baseline"
+            ],
+            "rules": {
+              "classification": [
+                "f1 > baseline.f1",
+                "accuracy > baseline.accuracy"
+              ],
+              "regression": [
+                "rmse < baseline.rmse"
+              ],
+              "stochastic": [
+                "abs(residual_acf1) <= 0.10 (strict mode only)"
+              ]
+            }
+          },
+          "artifact_paths": {
+            "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/cls_1d.joblib",
+            "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/reg_1d.joblib",
+            "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/calibration_1d.json",
+            "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-035538/ETH-USD/metrics_1d.json"
+          },
+          "calibration": {
+            "method": "linear_scale",
+            "scale": 0.853690167720258,
+            "min_confidence": 0.5,
+            "max_confidence": 0.99
+          }
+        },
+        "1w": {
+          "symbol": "ETH-USD",
+          "horizon": "1w",
+          "status": "insufficient_data",
+          "reason": "no_granularity_meets_minimum",
+          "required_min_samples": 180
+        },
+        "1mo": {
+          "symbol": "ETH-USD",
+          "horizon": "1mo",
+          "status": "insufficient_data",
+          "reason": "no_granularity_meets_minimum",
+          "required_min_samples": 140
+        },
+        "3mo": {
+          "symbol": "ETH-USD",
+          "horizon": "3mo",
+          "status": "insufficient_data",
+          "reason": "no_granularity_meets_minimum",
+          "required_min_samples": 120
+        }
+      },
+      "summary": {
+        "passed": 1,
+        "failed": 4,
+        "insufficient": 3
+      }
+    }
+  },
+  "phase_activation": {
+    "phase_1": [
+      "BTC-USD",
+      "ETH-USD",
+      "SOL-USD"
+    ],
+    "phase_2_batch_size": 20
+  }
+}

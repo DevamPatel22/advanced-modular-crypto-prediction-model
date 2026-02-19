@@ -1,0 +1,62 @@
+{
+  "generated_at": "2026-02-16T23:56:22.071637+00:00",
+  "symbol": "ATH-USD",
+  "horizon": "1d",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1h",
+  "steps_ahead": 24,
+  "rows_total": 242,
+  "rows_test": 37,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.5135135135135135,
+    "precision": 0.1,
+    "recall": 1.0,
+    "f1": 0.18181818181818182,
+    "roc_auc": 0.9714285714285714,
+    "mae": 0.00021180630440430424,
+    "rmse": 0.0002294295168298863,
+    "mape": 0.034823556009328606
+  },
+  "baseline": {
+    "accuracy": 0.05405405405405406,
+    "f1": 0.10256410256410256,
+    "rmse": 0.00032816031019791095,
+    "mae": 0.0002786486486486486,
+    "mape": 0.04584592367460376
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.5507921211143509,
+    "variance": 7.775992607386303e-09,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ATH-USD/cls_1d.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ATH-USD/reg_1d.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ATH-USD/calibration_1d.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ATH-USD/metrics_1d.json"
+  }
+}

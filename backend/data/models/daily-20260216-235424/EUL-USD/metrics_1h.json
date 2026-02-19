@@ -1,0 +1,63 @@
+{
+  "generated_at": "2026-02-16T23:57:36.851154+00:00",
+  "symbol": "EUL-USD",
+  "horizon": "1h",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1m",
+  "steps_ahead": 60,
+  "rows_total": 527,
+  "rows_test": 80,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.35,
+    "precision": 0.23076923076923078,
+    "recall": 0.8823529411764706,
+    "f1": 0.36585365853658536,
+    "roc_auc": 0.8253968253968254,
+    "mae": 0.031425769548056454,
+    "rmse": 0.038694750847118674,
+    "mape": 0.030630069467122146
+  },
+  "baseline": {
+    "accuracy": 0.2125,
+    "f1": 0.35051546391752575,
+    "rmse": 0.025437668918358095,
+    "mae": 0.018325000000000015,
+    "mape": 0.01786591754921461
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.8536059868863404,
+    "variance": 0.0013560588300838554,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/EUL-USD/cls_1h.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/EUL-USD/reg_1h.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/EUL-USD/calibration_1h.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/EUL-USD/metrics_1h.json"
+  }
+}

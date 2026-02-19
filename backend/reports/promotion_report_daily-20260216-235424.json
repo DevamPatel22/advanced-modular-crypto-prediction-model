@@ -1,0 +1,647 @@
+{
+  "generated_at": "2026-02-16T23:57:37.567506+00:00",
+  "previous_active": "daily-20260213-022217",
+  "new_active": "daily-20260213-022217",
+  "phase": "phase3",
+  "promoted_symbols": 0,
+  "promoted_pairs": 0,
+  "kept_previous_active": true,
+  "failed_pairs": [
+    {
+      "symbol": "00-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "00-USD",
+      "horizon": "1mo",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "00-USD",
+      "horizon": "1w",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "00-USD",
+      "horizon": "3mo",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "A8-USD",
+      "horizon": "1d",
+      "reason": "martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AAVE-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AAVE-USD",
+      "horizon": "1h",
+      "reason": "regression_rmse_not_below_baseline"
+    },
+    {
+      "symbol": "AAVE-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline"
+    },
+    {
+      "symbol": "ACH-USD",
+      "horizon": "1d",
+      "reason": "martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ACX-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ADA-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ADA-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ADA-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AERGO-USD",
+      "horizon": "1d",
+      "reason": "martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AERO-USD",
+      "horizon": "1d",
+      "reason": "martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AERO-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AERO-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AIOZ-USD",
+      "horizon": "1d",
+      "reason": "martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AKT-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AKT-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AKT-USD",
+      "horizon": "5m",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ALEO-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ALGO-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ALGO-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline"
+    },
+    {
+      "symbol": "ALGO-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "API3-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "APT-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline"
+    },
+    {
+      "symbol": "APT-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "APT-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ARB-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ARB-USD",
+      "horizon": "1h",
+      "reason": "martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ARB-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ASTER-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ASTER-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ASTER-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ATH-USD",
+      "horizon": "1d",
+      "reason": "martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ATOM-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ATOM-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ATOM-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AUCTION-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AVAX-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AVAX-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AVAX-USD",
+      "horizon": "5m",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AVNT-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AVNT-USD",
+      "horizon": "1h",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AVNT-USD",
+      "horizon": "5m",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AXS-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AXS-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AXS-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AZTEC-USD",
+      "horizon": "1h",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "AZTEC-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "B3-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BAT-USD",
+      "horizon": "1d",
+      "reason": "martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BAT-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BAT-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BCH-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BCH-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BCH-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BERA-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BERA-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BERA-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BIGTIME-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BIO-USD",
+      "horizon": "1d",
+      "reason": "martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BIRB-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BNB-USD",
+      "horizon": "1d",
+      "reason": "martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BNB-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BNB-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BNKR-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BNKR-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline"
+    },
+    {
+      "symbol": "BNKR-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline"
+    },
+    {
+      "symbol": "BONK-USD",
+      "horizon": "1d",
+      "reason": "martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BONK-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BONK-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BTC-USD",
+      "horizon": "12h",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BTC-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BTC-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BTC-USD",
+      "horizon": "1mo",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BTC-USD",
+      "horizon": "1w",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BTC-USD",
+      "horizon": "3mo",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BTC-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BTC-USD",
+      "horizon": "6h",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "C98-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "CBETH-USD",
+      "horizon": "1d",
+      "reason": "martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "CLANKER-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "CLANKER-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "CLANKER-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "COMP-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "COMP-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "COMP-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "COW-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "CRO-USD",
+      "horizon": "1d",
+      "reason": "martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "CRO-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "CRO-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline"
+    },
+    {
+      "symbol": "CRV-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "CRV-USD",
+      "horizon": "1h",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "CRV-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline"
+    },
+    {
+      "symbol": "CVX-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "DASH-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "DASH-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "DASH-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "DOGE-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "DOGE-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "DOGE-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "DOGINME-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "DOT-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "DOT-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "DOT-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "DRIFT-USD",
+      "horizon": "1d",
+      "reason": "martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "EDGE-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "EGLD-USD",
+      "horizon": "1d",
+      "reason": "martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "EIGEN-USD",
+      "horizon": "1d",
+      "reason": "martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ELSA-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ELSA-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ENA-USD",
+      "horizon": "1d",
+      "reason": "martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ENA-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ENA-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ENS-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ENS-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ETC-USD",
+      "horizon": "1d",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ETH-USD",
+      "horizon": "1d",
+      "reason": "martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ETH-USD",
+      "horizon": "1h",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ETH-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "ETHFI-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "EUL-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "EUL-USD",
+      "horizon": "1h",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "EUL-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    }
+  ],
+  "registry_path": "data/models/registry.json",
+  "registry": {
+    "active_model_version": "daily-20260213-022217",
+    "promoted": {},
+    "updated_at": "2026-02-13T02:23:44.095509+00:00"
+  }
+}

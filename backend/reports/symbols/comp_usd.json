@@ -1,0 +1,257 @@
+{
+  "symbol": "COMP-USD",
+  "model_version": "daily-20260216-235424",
+  "horizons": {
+    "5m": {
+      "generated_at": "2026-02-16T23:57:07.493953+00:00",
+      "symbol": "COMP-USD",
+      "horizon": "5m",
+      "status": "ok",
+      "model_version": "daily-20260216-235424",
+      "feature_version": "v2",
+      "granularity": "1m",
+      "steps_ahead": 5,
+      "rows_total": 538,
+      "rows_test": 81,
+      "selected_models": {
+        "classifier": "gradient_boosting_classifier",
+        "regressor": "random_forest_regressor"
+      },
+      "metrics": {
+        "accuracy": 0.5802469135802469,
+        "precision": 0.6515151515151515,
+        "recall": 0.7962962962962963,
+        "f1": 0.7166666666666667,
+        "roc_auc": 0.3758573388203018,
+        "mae": 0.6922389428832224,
+        "rmse": 0.8077605734749785,
+        "mape": 0.034686630005602605
+      },
+      "baseline": {
+        "accuracy": 0.6666666666666666,
+        "f1": 0.8,
+        "rmse": 0.26174155569054885,
+        "mae": 0.12691358024691352,
+        "mape": 0.006346348848706015
+      },
+      "martingale_diagnostic": {
+        "acf1": 0.6767120393413807,
+        "variance": 0.30797282372464385,
+        "pass": false
+      },
+      "promotion_gate": {
+        "passed": false,
+        "failed_reasons": [
+          "classification_f1_not_above_baseline",
+          "classification_accuracy_not_above_baseline",
+          "regression_rmse_not_below_baseline",
+          "martingale_residual_autocorrelation_too_high"
+        ],
+        "rules": {
+          "classification": [
+            "f1 > baseline.f1",
+            "accuracy > baseline.accuracy"
+          ],
+          "regression": [
+            "rmse < baseline.rmse"
+          ],
+          "stochastic": [
+            "abs(residual_acf1) <= 0.10"
+          ]
+        }
+      },
+      "artifact_paths": {
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/COMP-USD/cls_5m.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/COMP-USD/reg_5m.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/COMP-USD/calibration_5m.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/COMP-USD/metrics_5m.json"
+      },
+      "calibration": {
+        "method": "linear_scale",
+        "scale": 0.7638888528507057,
+        "min_confidence": 0.5,
+        "max_confidence": 0.99
+      }
+    },
+    "1h": {
+      "generated_at": "2026-02-16T23:57:08.239991+00:00",
+      "symbol": "COMP-USD",
+      "horizon": "1h",
+      "status": "ok",
+      "model_version": "daily-20260216-235424",
+      "feature_version": "v2",
+      "granularity": "1m",
+      "steps_ahead": 60,
+      "rows_total": 483,
+      "rows_test": 73,
+      "selected_models": {
+        "classifier": "gradient_boosting_classifier",
+        "regressor": "random_forest_regressor"
+      },
+      "metrics": {
+        "accuracy": 0.3698630136986301,
+        "precision": 0.3698630136986301,
+        "recall": 1.0,
+        "f1": 0.54,
+        "roc_auc": 0.7616747181964573,
+        "mae": 0.5242511289540269,
+        "rmse": 0.6186812026550658,
+        "mape": 0.026186002109237952
+      },
+      "baseline": {
+        "accuracy": 0.3698630136986301,
+        "f1": 0.54,
+        "rmse": 0.40733009736475173,
+        "mae": 0.3841095890410958,
+        "mape": 0.019188989354874012
+      },
+      "martingale_diagnostic": {
+        "acf1": 0.8700499649016669,
+        "variance": 0.382326732102845,
+        "pass": false
+      },
+      "promotion_gate": {
+        "passed": false,
+        "failed_reasons": [
+          "classification_f1_not_above_baseline",
+          "classification_accuracy_not_above_baseline",
+          "regression_rmse_not_below_baseline",
+          "martingale_residual_autocorrelation_too_high"
+        ],
+        "rules": {
+          "classification": [
+            "f1 > baseline.f1",
+            "accuracy > baseline.accuracy"
+          ],
+          "regression": [
+            "rmse < baseline.rmse"
+          ],
+          "stochastic": [
+            "abs(residual_acf1) <= 0.10"
+          ]
+        }
+      },
+      "artifact_paths": {
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/COMP-USD/cls_1h.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/COMP-USD/reg_1h.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/COMP-USD/calibration_1h.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/COMP-USD/metrics_1h.json"
+      },
+      "calibration": {
+        "method": "linear_scale",
+        "scale": 0.7,
+        "min_confidence": 0.5,
+        "max_confidence": 0.99
+      }
+    },
+    "6h": {
+      "symbol": "COMP-USD",
+      "horizon": "6h",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 260
+    },
+    "12h": {
+      "symbol": "COMP-USD",
+      "horizon": "12h",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 240
+    },
+    "1d": {
+      "generated_at": "2026-02-16T23:57:08.689235+00:00",
+      "symbol": "COMP-USD",
+      "horizon": "1d",
+      "status": "ok",
+      "model_version": "daily-20260216-235424",
+      "feature_version": "v2",
+      "granularity": "1h",
+      "steps_ahead": 24,
+      "rows_total": 242,
+      "rows_test": 37,
+      "selected_models": {
+        "classifier": "gradient_boosting_classifier",
+        "regressor": "random_forest_regressor"
+      },
+      "metrics": {
+        "accuracy": 0.6486486486486487,
+        "precision": 0.5384615384615384,
+        "recall": 0.9333333333333333,
+        "f1": 0.6829268292682927,
+        "roc_auc": 0.5757575757575758,
+        "mae": 2.7181730279297907,
+        "rmse": 2.86020068566025,
+        "mape": 0.13196770254937737
+      },
+      "baseline": {
+        "accuracy": 0.40540540540540543,
+        "f1": 0.5769230769230769,
+        "rmse": 1.6451550489650313,
+        "mae": 1.3708108108108108,
+        "mape": 0.06738847218214564
+      },
+      "martingale_diagnostic": {
+        "acf1": 0.8697014961318835,
+        "variance": 0.7922833524863618,
+        "pass": false
+      },
+      "promotion_gate": {
+        "passed": false,
+        "failed_reasons": [
+          "regression_rmse_not_below_baseline",
+          "martingale_residual_autocorrelation_too_high"
+        ],
+        "rules": {
+          "classification": [
+            "f1 > baseline.f1",
+            "accuracy > baseline.accuracy"
+          ],
+          "regression": [
+            "rmse < baseline.rmse"
+          ],
+          "stochastic": [
+            "abs(residual_acf1) <= 0.10"
+          ]
+        }
+      },
+      "artifact_paths": {
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/COMP-USD/cls_1d.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/COMP-USD/reg_1d.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/COMP-USD/calibration_1d.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/COMP-USD/metrics_1d.json"
+      },
+      "calibration": {
+        "method": "linear_scale",
+        "scale": 0.7512986663488778,
+        "min_confidence": 0.5,
+        "max_confidence": 0.99
+      }
+    },
+    "1w": {
+      "symbol": "COMP-USD",
+      "horizon": "1w",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 180
+    },
+    "1mo": {
+      "symbol": "COMP-USD",
+      "horizon": "1mo",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 140
+    },
+    "3mo": {
+      "symbol": "COMP-USD",
+      "horizon": "3mo",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 120
+    }
+  },
+  "summary": {
+    "passed": 0,
+    "failed": 3,
+    "insufficient": 5
+  }
+}

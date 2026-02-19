@@ -1,0 +1,63 @@
+{
+  "generated_at": "2026-02-16T23:55:58.832178+00:00",
+  "symbol": "00-USD",
+  "horizon": "3mo",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1d",
+  "steps_ahead": 90,
+  "rows_total": 1106,
+  "rows_test": 166,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.18674698795180722,
+    "precision": 0.04929577464788732,
+    "recall": 1.0,
+    "f1": 0.09395973154362416,
+    "roc_auc": 0.5480682839173405,
+    "mae": 0.029889943615003755,
+    "rmse": 0.03046242013322004,
+    "mape": 4.262145733394218
+  },
+  "baseline": {
+    "accuracy": 0.04216867469879518,
+    "f1": 0.08092485549132948,
+    "rmse": 0.006317798533765778,
+    "mae": 0.0055385542168674695,
+    "mape": 0.8057939323217895
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.4110126209393743,
+    "variance": 3.455031106470616e-05,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/00-USD/cls_3mo.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/00-USD/reg_3mo.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/00-USD/calibration_3mo.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/00-USD/metrics_3mo.json"
+  }
+}

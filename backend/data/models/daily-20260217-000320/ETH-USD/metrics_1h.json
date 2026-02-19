@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-02-17T00:04:55.201297+00:00",
+  "symbol": "ETH-USD",
+  "horizon": "1h",
+  "status": "ok",
+  "model_version": "daily-20260217-000320",
+  "feature_version": "v2",
+  "granularity": "1m",
+  "steps_ahead": 60,
+  "rows_total": 1031,
+  "rows_test": 155,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.8,
+    "precision": 0.8206896551724138,
+    "recall": 0.9596774193548387,
+    "f1": 0.8847583643122676,
+    "roc_auc": 0.6758584807492196,
+    "mae": 38.63770510406878,
+    "rmse": 39.80909163864378,
+    "mape": 0.019393243443737038
+  },
+  "baseline": {
+    "accuracy": 0.8,
+    "f1": 0.8888888888888888,
+    "rmse": 15.009147167966516,
+    "mae": 7.26767741935483,
+    "mape": 0.0036493281653967417
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.4231895413223482,
+    "variance": 149.79537888359164,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "classification_accuracy_not_above_baseline",
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260217-000320/ETH-USD/cls_1h.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260217-000320/ETH-USD/reg_1h.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260217-000320/ETH-USD/calibration_1h.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260217-000320/ETH-USD/metrics_1h.json"
+  }
+}

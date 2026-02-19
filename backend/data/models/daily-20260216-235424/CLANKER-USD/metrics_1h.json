@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-02-16T23:57:06.190612+00:00",
+  "symbol": "CLANKER-USD",
+  "horizon": "1h",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1m",
+  "steps_ahead": 60,
+  "rows_total": 386,
+  "rows_test": 58,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "gradient_boosting_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.8620689655172413,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "roc_auc": NaN,
+    "mae": 2.078292485229812,
+    "rmse": 2.2603769014265525,
+    "mape": 0.06622001453753065
+  },
+  "baseline": {
+    "accuracy": 0.0,
+    "f1": 0.0,
+    "rmse": 1.4765728026004377,
+    "mae": 1.3584482758620693,
+    "mape": 0.0433370776904882
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.7635911992524377,
+    "variance": 0.7900040823399941,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CLANKER-USD/cls_1h.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CLANKER-USD/reg_1h.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CLANKER-USD/calibration_1h.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CLANKER-USD/metrics_1h.json"
+  }
+}

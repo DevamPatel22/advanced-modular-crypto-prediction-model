@@ -1,0 +1,63 @@
+{
+  "generated_at": "2026-02-16T23:56:18.034753+00:00",
+  "symbol": "APT-USD",
+  "horizon": "1d",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1h",
+  "steps_ahead": 24,
+  "rows_total": 242,
+  "rows_test": 37,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.7297297297297297,
+    "precision": 0.125,
+    "recall": 0.25,
+    "f1": 0.16666666666666666,
+    "roc_auc": 0.7727272727272727,
+    "mae": 0.0583573227436287,
+    "rmse": 0.06333509708447078,
+    "mape": 0.06334789041340835
+  },
+  "baseline": {
+    "accuracy": 0.10810810810810811,
+    "f1": 0.1951219512195122,
+    "rmse": 0.045364264421309496,
+    "mae": 0.03779729729729729,
+    "mape": 0.04101081566082952
+  },
+  "martingale_diagnostic": {
+    "acf1": -0.01453919313931461,
+    "variance": 0.000605757404895298,
+    "pass": true
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "regression_rmse_not_below_baseline"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/APT-USD/cls_1d.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/APT-USD/reg_1d.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/APT-USD/calibration_1d.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/APT-USD/metrics_1d.json"
+  }
+}

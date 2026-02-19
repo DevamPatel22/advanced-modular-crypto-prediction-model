@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-02-16T23:56:40.123917+00:00",
+  "symbol": "BERA-USD",
+  "horizon": "1h",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1m",
+  "steps_ahead": 60,
+  "rows_total": 810,
+  "rows_test": 122,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.22131147540983606,
+    "precision": 0.17699115044247787,
+    "recall": 0.9090909090909091,
+    "f1": 0.2962962962962963,
+    "roc_auc": 0.4727272727272727,
+    "mae": 0.04343914598016436,
+    "rmse": 0.049742470249997,
+    "mape": 0.06642589381328357
+  },
+  "baseline": {
+    "accuracy": 0.18032786885245902,
+    "f1": 0.3055555555555556,
+    "rmse": 0.028490147851321566,
+    "mae": 0.02165573770491799,
+    "mape": 0.033357788764571246
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.8104164607657502,
+    "variance": 0.0006561837596742105,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BERA-USD/cls_1h.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BERA-USD/reg_1h.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BERA-USD/calibration_1h.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BERA-USD/metrics_1h.json"
+  }
+}

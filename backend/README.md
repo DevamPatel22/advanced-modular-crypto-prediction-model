@@ -92,6 +92,7 @@ Stochastic feature layer (used by all model candidates):
 - GBM-style drift/volatility features (`mu_20`, `sigma_20`, expected return/variance)
 - shock normalization (`shock_z_20`)
 - Markov transition probabilities over return regimes (`down/flat/up`)
+- volatility-scaled triple-barrier classification labels (`CLASSIFICATION_LABEL_MODE=triple_barrier`)
 
 Promotion gate (must pass all):
 
@@ -99,6 +100,11 @@ Promotion gate (must pass all):
 - classification `accuracy > baseline.accuracy`
 - regression `rmse < baseline.rmse`
 - martingale diagnostic `abs(residual_acf1) <= 0.10` when `MARTINGALE_GATE_MODE=strict`
+
+Training reports additionally include:
+
+- high-confidence slice quality at `HIGH_CONFIDENCE_THRESHOLD`
+- regime breakdown metrics (`down/flat/up`) on the test window
 
 Horizon data readiness uses adaptive minimum sample targets (short horizons require more history than long horizons) so early-stage training can activate qualified pairs sooner while still keeping gate checks strict.
 
@@ -127,6 +133,9 @@ Promotion safety:
 - if a candidate produces `0` promoted pairs, active model version is preserved (no empty rollout)
 
 Any symbol+horizon without promoted artifacts automatically stays on fallback inference.
+Model inference also supports reliability abstention:
+if confidence is below `PREDICTION_CONFIDENCE_MIN_FOR_MODEL` and `PREDICTION_ABSTAIN_TO_FALLBACK=true`,
+the endpoint returns fallback output instead of low-edge model output.
 
 ## Artifact Layout
 
@@ -154,6 +163,12 @@ Reports:
 - Recommended ingestion depth for training readiness: `INGESTION_LIMIT_PER_SYMBOL=1500`
 - Staged stochastic gate control: `MARTINGALE_GATE_MODE=bootstrap|strict` (default: `bootstrap`)
 - Bootstrap short-horizon promotion set: `BOOTSTRAP_PHASE1_HORIZONS=5m,1h,6h,12h`
+- Labeling and confidence controls:
+  - `CLASSIFICATION_LABEL_MODE=triple_barrier|terminal_direction`
+  - `TRIPLE_BARRIER_SIGMA_MULT=1.0`
+  - `HIGH_CONFIDENCE_THRESHOLD=0.62`
+  - `PREDICTION_CONFIDENCE_MIN_FOR_MODEL=0.56`
+  - `PREDICTION_ABSTAIN_TO_FALLBACK=true`
 - Flow:
   1. ingest latest candles
   2. train candidate version

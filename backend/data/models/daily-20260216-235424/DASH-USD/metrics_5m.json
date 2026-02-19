@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-02-16T23:57:16.388941+00:00",
+  "symbol": "DASH-USD",
+  "horizon": "5m",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1m",
+  "steps_ahead": 5,
+  "rows_total": 916,
+  "rows_test": 138,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.47101449275362317,
+    "precision": 0.46153846153846156,
+    "recall": 0.7384615384615385,
+    "f1": 0.5680473372781065,
+    "roc_auc": 0.5003161222339305,
+    "mae": 0.6256466847426808,
+    "rmse": 0.7739171753104475,
+    "mape": 0.016418791027998106
+  },
+  "baseline": {
+    "accuracy": 0.47101449275362317,
+    "f1": 0.6403940886699507,
+    "rmse": 0.09751254099947289,
+    "mae": 0.07826086956521722,
+    "mape": 0.0020505968570700443
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.4895187656417925,
+    "variance": 0.3624941399681202,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "classification_accuracy_not_above_baseline",
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/DASH-USD/cls_5m.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/DASH-USD/reg_5m.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/DASH-USD/calibration_5m.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/DASH-USD/metrics_5m.json"
+  }
+}

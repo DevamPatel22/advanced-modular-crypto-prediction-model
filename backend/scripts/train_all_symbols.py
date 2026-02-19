@@ -15,6 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.ml.features import FEATURE_VERSION
 from app.ml.training import all_horizon_specs, evaluate_symbol_horizon, list_symbols_with_any_candles
 from app.services.markets import fetch_symbols_by_quote
+from app.config import get_settings
 
 
 def _default_model_version() -> str:
@@ -48,6 +49,7 @@ def main() -> None:
         help="Optional comma-separated explicit symbol set (example: BTC-USD,ETH-USD,SOL-USD)",
     )
     args = parser.parse_args()
+    settings = get_settings()
 
     discovered_universe = asyncio.run(_resolve_universe(args.symbol_limit))
     requested_symbols = _parse_symbols(args.symbols)
@@ -76,6 +78,11 @@ def main() -> None:
             "classification": ["f1 > baseline.f1", "accuracy > baseline.accuracy"],
             "regression": ["rmse < baseline.rmse"],
             "stochastic": ["abs(residual_acf1) <= 0.10"],
+        },
+        "training_config": {
+            "classification_label_mode": settings.classification_label_mode,
+            "triple_barrier_sigma_mult": float(settings.triple_barrier_sigma_mult),
+            "high_confidence_threshold": float(settings.high_confidence_threshold),
         },
         "symbols": {},
         "phase_activation": {

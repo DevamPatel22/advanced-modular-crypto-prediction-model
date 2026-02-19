@@ -1,0 +1,259 @@
+{
+  "symbol": "ATOM-USD",
+  "model_version": "daily-20260216-235424",
+  "horizons": {
+    "5m": {
+      "generated_at": "2026-02-16T23:56:23.050903+00:00",
+      "symbol": "ATOM-USD",
+      "horizon": "5m",
+      "status": "ok",
+      "model_version": "daily-20260216-235424",
+      "feature_version": "v2",
+      "granularity": "1m",
+      "steps_ahead": 5,
+      "rows_total": 746,
+      "rows_test": 112,
+      "selected_models": {
+        "classifier": "logistic_regression",
+        "regressor": "gradient_boosting_regressor"
+      },
+      "metrics": {
+        "accuracy": 0.5178571428571429,
+        "precision": 0.5352112676056338,
+        "recall": 0.6440677966101694,
+        "f1": 0.5846153846153846,
+        "roc_auc": 0.5007994883274705,
+        "mae": 0.2130456708252975,
+        "rmse": 0.22516349731020704,
+        "mape": 0.0927561293600987
+      },
+      "baseline": {
+        "accuracy": 0.5267857142857143,
+        "f1": 0.6900584795321637,
+        "rmse": 0.007525551712095834,
+        "mae": 0.00604464285714285,
+        "mape": 0.002634586632706138
+      },
+      "martingale_diagnostic": {
+        "acf1": 0.4727893256634952,
+        "variance": 0.0053101426635625915,
+        "pass": false
+      },
+      "promotion_gate": {
+        "passed": false,
+        "failed_reasons": [
+          "classification_f1_not_above_baseline",
+          "classification_accuracy_not_above_baseline",
+          "regression_rmse_not_below_baseline",
+          "martingale_residual_autocorrelation_too_high"
+        ],
+        "rules": {
+          "classification": [
+            "f1 > baseline.f1",
+            "accuracy > baseline.accuracy"
+          ],
+          "regression": [
+            "rmse < baseline.rmse"
+          ],
+          "stochastic": [
+            "abs(residual_acf1) <= 0.10"
+          ]
+        }
+      },
+      "artifact_paths": {
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ATOM-USD/cls_5m.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ATOM-USD/reg_5m.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ATOM-USD/calibration_5m.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ATOM-USD/metrics_5m.json"
+      },
+      "calibration": {
+        "method": "linear_scale",
+        "scale": 0.9467002587611694,
+        "min_confidence": 0.5,
+        "max_confidence": 0.99
+      }
+    },
+    "1h": {
+      "generated_at": "2026-02-16T23:56:23.934312+00:00",
+      "symbol": "ATOM-USD",
+      "horizon": "1h",
+      "status": "ok",
+      "model_version": "daily-20260216-235424",
+      "feature_version": "v2",
+      "granularity": "1m",
+      "steps_ahead": 60,
+      "rows_total": 691,
+      "rows_test": 104,
+      "selected_models": {
+        "classifier": "gradient_boosting_classifier",
+        "regressor": "gradient_boosting_regressor"
+      },
+      "metrics": {
+        "accuracy": 0.6826923076923077,
+        "precision": 0.8867924528301887,
+        "recall": 0.6351351351351351,
+        "f1": 0.7401574803149606,
+        "roc_auc": 0.8,
+        "mae": 0.20029002788542913,
+        "rmse": 0.2023052162449705,
+        "mape": 0.08713830512254539
+      },
+      "baseline": {
+        "accuracy": 0.7115384615384616,
+        "f1": 0.8314606741573034,
+        "rmse": 0.0450112165508178,
+        "mae": 0.03852884615384616,
+        "mape": 0.016742622213415985
+      },
+      "martingale_diagnostic": {
+        "acf1": 0.32363002591339574,
+        "variance": 0.0008113052495783015,
+        "pass": false
+      },
+      "promotion_gate": {
+        "passed": false,
+        "failed_reasons": [
+          "classification_f1_not_above_baseline",
+          "classification_accuracy_not_above_baseline",
+          "regression_rmse_not_below_baseline",
+          "martingale_residual_autocorrelation_too_high"
+        ],
+        "rules": {
+          "classification": [
+            "f1 > baseline.f1",
+            "accuracy > baseline.accuracy"
+          ],
+          "regression": [
+            "rmse < baseline.rmse"
+          ],
+          "stochastic": [
+            "abs(residual_acf1) <= 0.10"
+          ]
+        }
+      },
+      "artifact_paths": {
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ATOM-USD/cls_1h.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ATOM-USD/reg_1h.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ATOM-USD/calibration_1h.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ATOM-USD/metrics_1h.json"
+      },
+      "calibration": {
+        "method": "linear_scale",
+        "scale": 0.9101287872652608,
+        "min_confidence": 0.5,
+        "max_confidence": 0.99
+      }
+    },
+    "6h": {
+      "symbol": "ATOM-USD",
+      "horizon": "6h",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 260
+    },
+    "12h": {
+      "symbol": "ATOM-USD",
+      "horizon": "12h",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 240
+    },
+    "1d": {
+      "generated_at": "2026-02-16T23:56:24.358305+00:00",
+      "symbol": "ATOM-USD",
+      "horizon": "1d",
+      "status": "ok",
+      "model_version": "daily-20260216-235424",
+      "feature_version": "v2",
+      "granularity": "1h",
+      "steps_ahead": 24,
+      "rows_total": 242,
+      "rows_test": 37,
+      "selected_models": {
+        "classifier": "gradient_boosting_classifier",
+        "regressor": "random_forest_regressor"
+      },
+      "metrics": {
+        "accuracy": 0.16216216216216217,
+        "precision": 0.16,
+        "recall": 0.2857142857142857,
+        "f1": 0.20512820512820512,
+        "roc_auc": 0.11490683229813664,
+        "mae": 0.1910732974283354,
+        "rmse": 0.2042873306111419,
+        "mape": 0.08743383642544891
+      },
+      "baseline": {
+        "accuracy": 0.3783783783783784,
+        "f1": 0.5490196078431373,
+        "rmse": 0.08211050563195395,
+        "mae": 0.0704594594594595,
+        "mape": 0.03216322096521076
+      },
+      "martingale_diagnostic": {
+        "acf1": 0.9549631933861946,
+        "variance": 0.005224308458088851,
+        "pass": false
+      },
+      "promotion_gate": {
+        "passed": false,
+        "failed_reasons": [
+          "classification_f1_not_above_baseline",
+          "classification_accuracy_not_above_baseline",
+          "regression_rmse_not_below_baseline",
+          "martingale_residual_autocorrelation_too_high"
+        ],
+        "rules": {
+          "classification": [
+            "f1 > baseline.f1",
+            "accuracy > baseline.accuracy"
+          ],
+          "regression": [
+            "rmse < baseline.rmse"
+          ],
+          "stochastic": [
+            "abs(residual_acf1) <= 0.10"
+          ]
+        }
+      },
+      "artifact_paths": {
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ATOM-USD/cls_1d.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ATOM-USD/reg_1d.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ATOM-USD/calibration_1d.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ATOM-USD/metrics_1d.json"
+      },
+      "calibration": {
+        "method": "linear_scale",
+        "scale": 0.7,
+        "min_confidence": 0.5,
+        "max_confidence": 0.99
+      }
+    },
+    "1w": {
+      "symbol": "ATOM-USD",
+      "horizon": "1w",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 180
+    },
+    "1mo": {
+      "symbol": "ATOM-USD",
+      "horizon": "1mo",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 140
+    },
+    "3mo": {
+      "symbol": "ATOM-USD",
+      "horizon": "3mo",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 120
+    }
+  },
+  "summary": {
+    "passed": 0,
+    "failed": 3,
+    "insufficient": 5
+  }
+}

@@ -82,6 +82,52 @@ class CandidateResult:
     val_score: float
 
 
+def _triple_barrier_labels(
+    close: np.ndarray,
+    high: np.ndarray,
+    low: np.ndarray,
+    sigma: np.ndarray,
+    steps_ahead: int,
+    sigma_mult: float,
+) -> np.ndarray:
+    labels = np.full(close.shape[0], np.nan, dtype=float)
+    if steps_ahead <= 0:
+        return labels
+
+    for idx in range(0, close.shape[0] - steps_ahead):
+        current_close = float(close[idx])
+        if current_close <= 0:
+            continue
+
+        local_sigma = float(sigma[idx]) if np.isfinite(sigma[idx]) else 0.0
+        # Keep barriers non-zero even during very low-volatility windows.
+        barrier_pct = max(0.001, abs(local_sigma) * sigma_mult)
+        upper = current_close * (1.0 + barrier_pct)
+        lower = current_close * (1.0 - barrier_pct)
+
+        decided: float | None = None
+        for forward in range(idx + 1, idx + steps_ahead + 1):
+            up_touch = bool(high[forward] >= upper)
+            down_touch = bool(low[forward] <= lower)
+            if up_touch and down_touch:
+                decided = 1.0 if close[forward] >= current_close else 0.0
+                break
+            if up_touch:
+                decided = 1.0
+                break
+            if down_touch:
+                decided = 0.0
+                break
+
+        if decided is None:
+            terminal_close = float(close[idx + steps_ahead])
+            decided = 1.0 if terminal_close > current_close else 0.0
+
+        labels[idx] = decided
+
+    return labels
+
+
 def _database_path() -> Path:
     settings = get_settings()
     return Path(settings.market_data_sqlite_path)
@@ -163,12 +209,25 @@ def resolve_horizon_data(symbol: str, spec: HorizonSpec, min_samples: int | None
 
 
 def _prepare_supervised(df: pd.DataFrame, steps_ahead: int, min_samples: int) -> tuple[pd.DataFrame, SplitData] | None:
+    settings = get_settings()
     enriched = build_features(df)
     enriched["target_close"] = enriched["close"].shift(-steps_ahead)
     enriched["target_log_return"] = np.log((enriched["target_close"] + 1e-12) / (enriched["close"] + 1e-12))
-    enriched["target_up"] = (enriched["target_close"] > enriched["close"]).astype(int)
+    if settings.classification_label_mode.strip().lower() == "triple_barrier":
+        labels = _triple_barrier_labels(
+            close=enriched["close"].to_numpy(dtype=float),
+            high=enriched["high"].to_numpy(dtype=float),
+            low=enriched["low"].to_numpy(dtype=float),
+            sigma=enriched["sigma_20"].to_numpy(dtype=float),
+            steps_ahead=steps_ahead,
+            sigma_mult=float(settings.triple_barrier_sigma_mult),
+        )
+        enriched["target_up"] = labels
+    else:
+        enriched["target_up"] = (enriched["target_close"] > enriched["close"]).astype(int)
     enriched = enriched[(enriched["close"] > 0) & (enriched["target_close"] > 0)]
     enriched = enriched.dropna(subset=FEATURE_COLUMNS + ["target_close", "target_log_return", "target_up"]).reset_index(drop=True)
+    enriched["target_up"] = enriched["target_up"].astype(int)
 
     if len(enriched) < min_samples:
         return None
@@ -372,6 +431,53 @@ def _metrics(y_true_cls: np.ndarray, y_pred_cls: np.ndarray, y_proba_cls: np.nda
     }
 
 
+def _confidence_slice_metrics(y_true_cls: np.ndarray, y_pred_cls: np.ndarray, y_proba_cls: np.ndarray, threshold: float) -> dict[str, float]:
+    confidence = np.maximum(y_proba_cls, 1 - y_proba_cls)
+    mask = confidence >= threshold
+    selected = int(np.sum(mask))
+    total = int(len(y_true_cls))
+    coverage = float(selected / total) if total > 0 else 0.0
+    if selected == 0:
+        return {
+            "threshold": float(threshold),
+            "coverage": coverage,
+            "selected_samples": 0.0,
+            "precision": math.nan,
+            "accuracy": math.nan,
+        }
+    return {
+        "threshold": float(threshold),
+        "coverage": coverage,
+        "selected_samples": float(selected),
+        "precision": float(precision_score(y_true_cls[mask], y_pred_cls[mask], zero_division=0)),
+        "accuracy": float(accuracy_score(y_true_cls[mask], y_pred_cls[mask])),
+    }
+
+
+def _regime_metrics(split: SplitData, y_pred_cls: np.ndarray) -> dict[str, dict[str, float]]:
+    if split.x_test.empty:
+        return {}
+
+    probs = split.x_test[["markov_prob_down", "markov_prob_flat", "markov_prob_up"]].to_numpy(dtype=float)
+    if probs.size == 0:
+        return {}
+    regime_ids = np.argmax(probs, axis=1)
+    regime_name = {0: "down", 1: "flat", 2: "up"}
+
+    out: dict[str, dict[str, float]] = {}
+    for regime_idx in [0, 1, 2]:
+        mask = regime_ids == regime_idx
+        count = int(np.sum(mask))
+        if count == 0:
+            continue
+        out[regime_name[regime_idx]] = {
+            "count": float(count),
+            "accuracy": float(accuracy_score(split.y_test_cls[mask], y_pred_cls[mask])),
+            "f1": float(f1_score(split.y_test_cls[mask], y_pred_cls[mask], zero_division=0)),
+        }
+    return out
+
+
 def _baseline_metrics(y_true_cls: np.ndarray, y_true_reg: np.ndarray, current_close: np.ndarray) -> dict[str, float]:
     cls_baseline = np.ones_like(y_true_cls)
     reg_baseline = current_close
@@ -452,13 +558,20 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         y_true_reg=split.target_close_test,
         y_pred_reg=reg_pred,
     )
+    settings = get_settings()
+    confidence_slice = _confidence_slice_metrics(
+        y_true_cls=split.y_test_cls,
+        y_pred_cls=cls_pred,
+        y_proba_cls=cls_prob,
+        threshold=float(settings.high_confidence_threshold),
+    )
+    regime_breakdown = _regime_metrics(split=split, y_pred_cls=cls_pred)
     baseline = _baseline_metrics(
         y_true_cls=split.y_test_cls,
         y_true_reg=split.target_close_test,
         current_close=split.current_close_test,
     )
     martingale_diag = _martingale_residual_diagnostic(split.target_close_test, reg_pred)
-    settings = get_settings()
     martingale_enforced = settings.martingale_gate_mode.strip().lower() == "strict"
 
     promotion_pass = (
@@ -509,7 +622,11 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         "martingale_enforced": martingale_enforced,
         "regression_target": "log_return",
         "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+        "classification_label_mode": settings.classification_label_mode,
+        "triple_barrier_sigma_mult": float(settings.triple_barrier_sigma_mult),
         "log_return_clip": float(HORIZON_LOG_RETURN_CLIP.get(spec.label, 1.0)),
+        "confidence_slice": confidence_slice,
+        "regime_breakdown": regime_breakdown,
         "promotion_gate": {
             "passed": promotion_pass,
             "failed_reasons": failed_reasons,

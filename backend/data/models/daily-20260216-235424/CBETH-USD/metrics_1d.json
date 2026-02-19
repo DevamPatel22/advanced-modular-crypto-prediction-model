@@ -1,0 +1,62 @@
+{
+  "generated_at": "2026-02-16T23:57:04.881560+00:00",
+  "symbol": "CBETH-USD",
+  "horizon": "1d",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1h",
+  "steps_ahead": 24,
+  "rows_total": 242,
+  "rows_test": 37,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.5675675675675675,
+    "precision": 0.30434782608695654,
+    "recall": 1.0,
+    "f1": 0.4666666666666667,
+    "roc_auc": 0.6904761904761905,
+    "mae": 62.60218895744152,
+    "rmse": 71.82043092211198,
+    "mape": 0.028328741696224694
+  },
+  "baseline": {
+    "accuracy": 0.1891891891891892,
+    "f1": 0.3181818181818182,
+    "rmse": 98.68626749397252,
+    "mae": 87.55810810810813,
+    "mape": 0.03959927122990554
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.36163399893620135,
+    "variance": 1548.5629361520348,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CBETH-USD/cls_1d.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CBETH-USD/reg_1d.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CBETH-USD/calibration_1d.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CBETH-USD/metrics_1d.json"
+  }
+}

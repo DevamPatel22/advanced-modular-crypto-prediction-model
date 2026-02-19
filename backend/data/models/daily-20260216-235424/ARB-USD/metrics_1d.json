@@ -1,0 +1,63 @@
+{
+  "generated_at": "2026-02-16T23:56:19.939796+00:00",
+  "symbol": "ARB-USD",
+  "horizon": "1d",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1h",
+  "steps_ahead": 24,
+  "rows_total": 242,
+  "rows_test": 37,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.6216216216216216,
+    "precision": 0.1,
+    "recall": 0.16666666666666666,
+    "f1": 0.125,
+    "roc_auc": 0.6344086021505376,
+    "mae": 0.0031452370541773396,
+    "rmse": 0.0034568857265635895,
+    "mape": 0.027446283599412726
+  },
+  "baseline": {
+    "accuracy": 0.16216216216216217,
+    "f1": 0.27906976744186046,
+    "rmse": 0.004748001001844198,
+    "mae": 0.004035135135135136,
+    "mape": 0.03538676287224771
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.5283516862005839,
+    "variance": 2.1292642407997964e-06,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ARB-USD/cls_1d.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ARB-USD/reg_1d.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ARB-USD/calibration_1d.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ARB-USD/metrics_1d.json"
+  }
+}

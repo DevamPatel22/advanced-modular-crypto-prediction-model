@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-02-17T00:04:53.733235+00:00",
+  "symbol": "ETH-USD",
+  "horizon": "5m",
+  "status": "ok",
+  "model_version": "daily-20260217-000320",
+  "feature_version": "v2",
+  "granularity": "1m",
+  "steps_ahead": 5,
+  "rows_total": 1086,
+  "rows_test": 163,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.5337423312883436,
+    "precision": 0.5268817204301075,
+    "recall": 0.6049382716049383,
+    "f1": 0.5632183908045977,
+    "roc_auc": 0.5130984643179766,
+    "mae": 17.27297474343215,
+    "rmse": 20.640307508889403,
+    "mape": 0.00867492990501274
+  },
+  "baseline": {
+    "accuracy": 0.49693251533742333,
+    "f1": 0.6639344262295082,
+    "rmse": 2.835615080266624,
+    "mae": 2.0402453987729934,
+    "mape": 0.0010232861227277153
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.6917456140624582,
+    "variance": 251.31569646560115,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260217-000320/ETH-USD/cls_5m.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260217-000320/ETH-USD/reg_5m.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260217-000320/ETH-USD/calibration_5m.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260217-000320/ETH-USD/metrics_5m.json"
+  }
+}

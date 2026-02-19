@@ -1,0 +1,62 @@
+{
+  "generated_at": "2026-02-16T23:56:09.785619+00:00",
+  "symbol": "AERO-USD",
+  "horizon": "1d",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1h",
+  "steps_ahead": 24,
+  "rows_total": 242,
+  "rows_test": 37,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.8648648648648649,
+    "precision": 0.6666666666666666,
+    "recall": 0.8888888888888888,
+    "f1": 0.7619047619047619,
+    "roc_auc": 0.7817460317460317,
+    "mae": 0.010873394446790224,
+    "rmse": 0.013480158625215457,
+    "mape": 0.03447769650187176
+  },
+  "baseline": {
+    "accuracy": 0.24324324324324326,
+    "f1": 0.391304347826087,
+    "rmse": 0.01851242760082199,
+    "mae": 0.015160270270270275,
+    "mape": 0.048777007750004056
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.7028668411532254,
+    "variance": 7.666415795750825e-05,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AERO-USD/cls_1d.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AERO-USD/reg_1d.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AERO-USD/calibration_1d.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AERO-USD/metrics_1d.json"
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "generated_at": "2026-02-16T23:56:48.070697+00:00",
+  "symbol": "BNKR-USD",
+  "horizon": "1d",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1h",
+  "steps_ahead": 24,
+  "rows_total": 242,
+  "rows_test": 37,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.32432432432432434,
+    "precision": 0.2857142857142857,
+    "recall": 1.0,
+    "f1": 0.4444444444444444,
+    "roc_auc": 0.9407407407407408,
+    "mae": 0.00025038676069703744,
+    "rmse": 0.00025349717170737064,
+    "mape": 0.4214926572199111
+  },
+  "baseline": {
+    "accuracy": 0.2702702702702703,
+    "f1": 0.425531914893617,
+    "rmse": 6.681398340451179e-05,
+    "mae": 5.735405405405405e-05,
+    "mape": 0.09734899638829494
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.3818833162543377,
+    "variance": 1.5672861312806737e-09,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BNKR-USD/cls_1d.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BNKR-USD/reg_1d.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BNKR-USD/calibration_1d.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BNKR-USD/metrics_1d.json"
+  }
+}

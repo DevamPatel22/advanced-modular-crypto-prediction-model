@@ -1,0 +1,63 @@
+{
+  "generated_at": "2026-02-16T23:56:28.394572+00:00",
+  "symbol": "AVNT-USD",
+  "horizon": "1h",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1m",
+  "steps_ahead": 60,
+  "rows_total": 453,
+  "rows_test": 68,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.36764705882352944,
+    "precision": 0.3384615384615385,
+    "recall": 1.0,
+    "f1": 0.5057471264367817,
+    "roc_auc": 0.6141304347826088,
+    "mae": 0.004062665856752373,
+    "rmse": 0.004945019720829688,
+    "mape": 0.019880323795077717
+  },
+  "baseline": {
+    "accuracy": 0.3235294117647059,
+    "f1": 0.4888888888888889,
+    "rmse": 0.004584388470347907,
+    "mae": 0.004077941176470589,
+    "mape": 0.01994563067516556
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.5544577255886864,
+    "variance": 1.4159711506497531e-05,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AVNT-USD/cls_1h.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AVNT-USD/reg_1h.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AVNT-USD/calibration_1h.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AVNT-USD/metrics_1h.json"
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "generated_at": "2026-02-18T18:48:17.556121+00:00",
+  "previous_active": "daily-20260213-022217",
+  "new_active": "daily-20260218-184529",
+  "phase": "phase1",
+  "promoted_symbols": 1,
+  "promoted_pairs": 1,
+  "kept_previous_active": false,
+  "failed_pairs": [
+    {
+      "symbol": "BTC-USD",
+      "horizon": "12h",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline"
+    },
+    {
+      "symbol": "BTC-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline"
+    },
+    {
+      "symbol": "BTC-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline"
+    },
+    {
+      "symbol": "BTC-USD",
+      "horizon": "6h",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline"
+    },
+    {
+      "symbol": "ETH-USD",
+      "horizon": "1h",
+      "reason": "classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline"
+    },
+    {
+      "symbol": "ETH-USD",
+      "horizon": "5m",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline"
+    },
+    {
+      "symbol": "ETH-USD",
+      "horizon": "6h",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline"
+    }
+  ],
+  "registry_path": "data/models/registry.json",
+  "registry": {
+    "active_model_version": "daily-20260218-184529",
+    "promoted": {
+      "ETH-USD": {
+        "12h": true
+      }
+    },
+    "updated_at": "2026-02-18T18:48:17.555555+00:00"
+  }
+}

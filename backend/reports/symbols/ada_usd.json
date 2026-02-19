@@ -1,0 +1,256 @@
+{
+  "symbol": "ADA-USD",
+  "model_version": "daily-20260216-235424",
+  "horizons": {
+    "5m": {
+      "generated_at": "2026-02-16T23:56:04.790975+00:00",
+      "symbol": "ADA-USD",
+      "horizon": "5m",
+      "status": "ok",
+      "model_version": "daily-20260216-235424",
+      "feature_version": "v2",
+      "granularity": "1m",
+      "steps_ahead": 5,
+      "rows_total": 1066,
+      "rows_test": 160,
+      "selected_models": {
+        "classifier": "logistic_regression",
+        "regressor": "gradient_boosting_regressor"
+      },
+      "metrics": {
+        "accuracy": 0.43125,
+        "precision": 0.3561643835616438,
+        "recall": 0.37142857142857144,
+        "f1": 0.36363636363636365,
+        "roc_auc": 0.425079365079365,
+        "mae": 0.012653988908953246,
+        "rmse": 0.013502373617107372,
+        "mape": 0.04431605320166319
+      },
+      "baseline": {
+        "accuracy": 0.4375,
+        "f1": 0.6086956521739131,
+        "rmse": 0.0004990616194419315,
+        "mae": 0.0003593750000000024,
+        "mape": 0.0012577199534535527
+      },
+      "martingale_diagnostic": {
+        "acf1": 0.6069668086934549,
+        "variance": 2.5684829765181536e-05,
+        "pass": false
+      },
+      "promotion_gate": {
+        "passed": false,
+        "failed_reasons": [
+          "classification_f1_not_above_baseline",
+          "classification_accuracy_not_above_baseline",
+          "regression_rmse_not_below_baseline",
+          "martingale_residual_autocorrelation_too_high"
+        ],
+        "rules": {
+          "classification": [
+            "f1 > baseline.f1",
+            "accuracy > baseline.accuracy"
+          ],
+          "regression": [
+            "rmse < baseline.rmse"
+          ],
+          "stochastic": [
+            "abs(residual_acf1) <= 0.10"
+          ]
+        }
+      },
+      "artifact_paths": {
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ADA-USD/cls_5m.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ADA-USD/reg_5m.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ADA-USD/calibration_5m.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ADA-USD/metrics_5m.json"
+      },
+      "calibration": {
+        "method": "linear_scale",
+        "scale": 0.7602508996172985,
+        "min_confidence": 0.5,
+        "max_confidence": 0.99
+      }
+    },
+    "1h": {
+      "generated_at": "2026-02-16T23:56:06.081461+00:00",
+      "symbol": "ADA-USD",
+      "horizon": "1h",
+      "status": "ok",
+      "model_version": "daily-20260216-235424",
+      "feature_version": "v2",
+      "granularity": "1m",
+      "steps_ahead": 60,
+      "rows_total": 1011,
+      "rows_test": 152,
+      "selected_models": {
+        "classifier": "gradient_boosting_classifier",
+        "regressor": "gradient_boosting_regressor"
+      },
+      "metrics": {
+        "accuracy": 0.5328947368421053,
+        "precision": 0.4153846153846154,
+        "recall": 0.45,
+        "f1": 0.432,
+        "roc_auc": 0.5684782608695652,
+        "mae": 0.012655119346864174,
+        "rmse": 0.013057804392786337,
+        "mape": 0.04432732855568966
+      },
+      "baseline": {
+        "accuracy": 0.39473684210526316,
+        "f1": 0.5660377358490566,
+        "rmse": 0.0035897606576131753,
+        "mae": 0.0018361842105263178,
+        "mape": 0.006427485352035247
+      },
+      "martingale_diagnostic": {
+        "acf1": 0.177645685804005,
+        "variance": 1.841021965951314e-05,
+        "pass": false
+      },
+      "promotion_gate": {
+        "passed": false,
+        "failed_reasons": [
+          "classification_f1_not_above_baseline",
+          "regression_rmse_not_below_baseline",
+          "martingale_residual_autocorrelation_too_high"
+        ],
+        "rules": {
+          "classification": [
+            "f1 > baseline.f1",
+            "accuracy > baseline.accuracy"
+          ],
+          "regression": [
+            "rmse < baseline.rmse"
+          ],
+          "stochastic": [
+            "abs(residual_acf1) <= 0.10"
+          ]
+        }
+      },
+      "artifact_paths": {
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ADA-USD/cls_1h.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ADA-USD/reg_1h.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ADA-USD/calibration_1h.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ADA-USD/metrics_1h.json"
+      },
+      "calibration": {
+        "method": "linear_scale",
+        "scale": 0.7181895056706137,
+        "min_confidence": 0.5,
+        "max_confidence": 0.99
+      }
+    },
+    "6h": {
+      "symbol": "ADA-USD",
+      "horizon": "6h",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 260
+    },
+    "12h": {
+      "symbol": "ADA-USD",
+      "horizon": "12h",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 240
+    },
+    "1d": {
+      "generated_at": "2026-02-16T23:56:06.506583+00:00",
+      "symbol": "ADA-USD",
+      "horizon": "1d",
+      "status": "ok",
+      "model_version": "daily-20260216-235424",
+      "feature_version": "v2",
+      "granularity": "1h",
+      "steps_ahead": 24,
+      "rows_total": 242,
+      "rows_test": 37,
+      "selected_models": {
+        "classifier": "gradient_boosting_classifier",
+        "regressor": "random_forest_regressor"
+      },
+      "metrics": {
+        "accuracy": 0.6756756756756757,
+        "precision": 0.47058823529411764,
+        "recall": 0.7272727272727273,
+        "f1": 0.5714285714285714,
+        "roc_auc": 0.7797202797202798,
+        "mae": 0.012507076176579124,
+        "rmse": 0.013310797956369963,
+        "mape": 0.04423111689019082
+      },
+      "baseline": {
+        "accuracy": 0.2972972972972973,
+        "f1": 0.4583333333333333,
+        "rmse": 0.011271058368971241,
+        "mae": 0.009232432432432429,
+        "mape": 0.032825742230069926
+      },
+      "martingale_diagnostic": {
+        "acf1": 0.7960854167192146,
+        "variance": 2.075038774854973e-05,
+        "pass": false
+      },
+      "promotion_gate": {
+        "passed": false,
+        "failed_reasons": [
+          "regression_rmse_not_below_baseline",
+          "martingale_residual_autocorrelation_too_high"
+        ],
+        "rules": {
+          "classification": [
+            "f1 > baseline.f1",
+            "accuracy > baseline.accuracy"
+          ],
+          "regression": [
+            "rmse < baseline.rmse"
+          ],
+          "stochastic": [
+            "abs(residual_acf1) <= 0.10"
+          ]
+        }
+      },
+      "artifact_paths": {
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ADA-USD/cls_1d.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ADA-USD/reg_1d.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ADA-USD/calibration_1d.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ADA-USD/metrics_1d.json"
+      },
+      "calibration": {
+        "method": "linear_scale",
+        "scale": 0.763703074465223,
+        "min_confidence": 0.5,
+        "max_confidence": 0.99
+      }
+    },
+    "1w": {
+      "symbol": "ADA-USD",
+      "horizon": "1w",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 180
+    },
+    "1mo": {
+      "symbol": "ADA-USD",
+      "horizon": "1mo",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 140
+    },
+    "3mo": {
+      "symbol": "ADA-USD",
+      "horizon": "3mo",
+      "status": "insufficient_data",
+      "reason": "no_granularity_meets_minimum",
+      "required_min_samples": 120
+    }
+  },
+  "summary": {
+    "passed": 0,
+    "failed": 3,
+    "insufficient": 5
+  }
+}

@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     retrain_schedule_cron: str = "0 2 * * *"
     martingale_gate_mode: str = "bootstrap"
     bootstrap_phase1_horizons: str = "5m,1h,6h,12h"
+    classification_label_mode: str = "triple_barrier"
+    triple_barrier_sigma_mult: float = 1.0
+    high_confidence_threshold: float = 0.62
+    prediction_confidence_min_for_model: float = 0.56
+    prediction_abstain_to_fallback: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",

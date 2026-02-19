@@ -1,0 +1,36 @@
+{
+  "generated_at": "2026-02-13T02:23:44.095790+00:00",
+  "previous_active": "daily-20260213-022207",
+  "new_active": "daily-20260213-022217",
+  "phase": "phase3",
+  "promoted_symbols": 0,
+  "promoted_pairs": 0,
+  "failed_pairs": [
+    {
+      "symbol": "BTC-USD",
+      "horizon": "1d",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BTC-USD",
+      "horizon": "1mo",
+      "reason": "regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BTC-USD",
+      "horizon": "1w",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    },
+    {
+      "symbol": "BTC-USD",
+      "horizon": "3mo",
+      "reason": "classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high"
+    }
+  ],
+  "registry_path": "data/models/registry.json",
+  "registry": {
+    "active_model_version": "daily-20260213-022217",
+    "promoted": {},
+    "updated_at": "2026-02-13T02:23:44.095509+00:00"
+  }
+}

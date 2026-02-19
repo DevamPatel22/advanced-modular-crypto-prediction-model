@@ -1,0 +1,62 @@
+{
+  "generated_at": "2026-02-16T23:55:59.286602+00:00",
+  "symbol": "A8-USD",
+  "horizon": "1d",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1h",
+  "steps_ahead": 24,
+  "rows_total": 241,
+  "rows_test": 37,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.21621621621621623,
+    "precision": 0.14705882352941177,
+    "recall": 1.0,
+    "f1": 0.2564102564102564,
+    "roc_auc": 0.79375,
+    "mae": 0.00022946904548904593,
+    "rmse": 0.0002767700476080166,
+    "mape": 0.019684030035724755
+  },
+  "baseline": {
+    "accuracy": 0.13513513513513514,
+    "f1": 0.23809523809523808,
+    "rmse": 0.00046990510830465665,
+    "mae": 0.00037027027027027054,
+    "mape": 0.032032831732131735
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.6984799959997057,
+    "variance": 6.729904717544694e-08,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/A8-USD/cls_1d.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/A8-USD/reg_1d.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/A8-USD/calibration_1d.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/A8-USD/metrics_1d.json"
+  }
+}

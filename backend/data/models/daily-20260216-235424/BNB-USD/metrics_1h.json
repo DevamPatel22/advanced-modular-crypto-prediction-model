@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-02-16T23:56:44.400115+00:00",
+  "symbol": "BNB-USD",
+  "horizon": "1h",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1m",
+  "steps_ahead": 60,
+  "rows_total": 873,
+  "rows_test": 131,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.5954198473282443,
+    "precision": 0.6666666666666666,
+    "recall": 0.6233766233766234,
+    "f1": 0.6442953020134228,
+    "roc_auc": 0.663059163059163,
+    "mae": 8.556355418476153,
+    "rmse": 9.032094968800095,
+    "mape": 0.013681586046886286
+  },
+  "baseline": {
+    "accuracy": 0.5877862595419847,
+    "f1": 0.7403846153846154,
+    "rmse": 5.339944034358062,
+    "mae": 4.581450381679381,
+    "mape": 0.007336900508041364
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.9782678861250296,
+    "variance": 64.05634150382929,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BNB-USD/cls_1h.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BNB-USD/reg_1h.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BNB-USD/calibration_1h.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BNB-USD/metrics_1h.json"
+  }
+}

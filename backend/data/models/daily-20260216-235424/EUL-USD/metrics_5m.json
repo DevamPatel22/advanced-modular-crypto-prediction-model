@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-02-16T23:57:36.065818+00:00",
+  "symbol": "EUL-USD",
+  "horizon": "5m",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1m",
+  "steps_ahead": 5,
+  "rows_total": 582,
+  "rows_test": 88,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.5340909090909091,
+    "precision": 0.5068493150684932,
+    "recall": 0.8809523809523809,
+    "f1": 0.6434782608695652,
+    "roc_auc": 0.5445134575569358,
+    "mae": 0.014062806467169332,
+    "rmse": 0.01636470031781358,
+    "mape": 0.013715479858672169
+  },
+  "baseline": {
+    "accuracy": 0.4772727272727273,
+    "f1": 0.6461538461538462,
+    "rmse": 0.0057386251125002286,
+    "mae": 0.004840909090909095,
+    "mape": 0.00471988604173329
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.6593676884479291,
+    "variance": 0.00016373742254689576,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/EUL-USD/cls_5m.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/EUL-USD/reg_5m.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/EUL-USD/calibration_5m.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/EUL-USD/metrics_5m.json"
+  }
+}

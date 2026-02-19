@@ -1,0 +1,63 @@
+{
+  "generated_at": "2026-02-17T14:51:02.166004+00:00",
+  "symbol": "ETH-USD",
+  "horizon": "12h",
+  "status": "ok",
+  "model_version": "daily-20260217-144916",
+  "feature_version": "v2",
+  "granularity": "1h",
+  "steps_ahead": 12,
+  "rows_total": 269,
+  "rows_test": 41,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "gradient_boosting_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.6585365853658537,
+    "precision": 0.6551724137931034,
+    "recall": 0.8260869565217391,
+    "f1": 0.7307692307692307,
+    "roc_auc": 0.5845410628019323,
+    "mae": 37.882991981608775,
+    "rmse": 45.319574948377706,
+    "mape": 0.01918432905503314
+  },
+  "baseline": {
+    "accuracy": 0.5609756097560976,
+    "f1": 0.71875,
+    "rmse": 31.91512345077251,
+    "mae": 23.982682926829277,
+    "mape": 0.012157676263271192
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.42595860574068967,
+    "variance": 1549.0530419509398,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260217-144916/ETH-USD/cls_12h.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260217-144916/ETH-USD/reg_12h.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260217-144916/ETH-USD/calibration_12h.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260217-144916/ETH-USD/metrics_12h.json"
+  }
+}

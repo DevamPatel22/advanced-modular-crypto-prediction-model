@@ -1,0 +1,9 @@
+{
+  "active_model_version": "daily-20260219-050827",
+  "promoted": {
+    "ETH-USD": {
+      "12h": true
+    }
+  },
+  "updated_at": "2026-02-19T05:10:59.877203+00:00"
+}

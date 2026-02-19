@@ -1,0 +1,63 @@
+{
+  "generated_at": "2026-02-16T23:56:34.208054+00:00",
+  "symbol": "BAT-USD",
+  "horizon": "1h",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1m",
+  "steps_ahead": 60,
+  "rows_total": 388,
+  "rows_test": 59,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "gradient_boosting_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.15254237288135594,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "roc_auc": 0.08516483516483518,
+    "mae": 0.0050857172603233705,
+    "rmse": 0.005207112688993432,
+    "mape": 0.03953207078549318
+  },
+  "baseline": {
+    "accuracy": 0.11864406779661017,
+    "f1": 0.21212121212121213,
+    "rmse": 0.005505522035316534,
+    "mae": 0.004751525423728812,
+    "mape": 0.03692722105966453
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.7097559396365375,
+    "variance": 1.2495025039253608e-06,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BAT-USD/cls_1h.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BAT-USD/reg_1h.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BAT-USD/calibration_1h.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BAT-USD/metrics_1h.json"
+  }
+}

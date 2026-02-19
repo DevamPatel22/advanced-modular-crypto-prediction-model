@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-02-17T14:49:16.952519+00:00",
+  "model_version": "daily-20260217-144916",
+  "phase": "phase1",
+  "steps": [
+    {
+      "step": "ingestion",
+      "status": "ok"
+    },
+    {
+      "step": "train_all_symbols",
+      "status": "ok",
+      "returncode": 0,
+      "stdout_tail": "{\n  \"summary_report\": \"/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/summary_report_daily-20260217-144916.json\",\n  \"manifest\": \"/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260217-144916/manifest.json\"\n}\n",
+      "stderr_tail": ""
+    },
+    {
+      "step": "promote_model",
+      "status": "ok",
+      "returncode": 0,
+      "stdout_tail": "{\n  \"generated_at\": \"2026-02-17T14:51:02.851896+00:00\",\n  \"previous_active\": \"daily-20260213-022217\",\n  \"new_active\": \"daily-20260213-022217\",\n  \"phase\": \"phase1\",\n  \"promoted_symbols\": 0,\n  \"promoted_pairs\": 0,\n  \"kept_previous_active\": true,\n  \"failed_pairs\": [\n    {\n      \"symbol\": \"BTC-USD\",\n      \"horizon\": \"12h\",\n      \"reason\": \"classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high\"\n    },\n    {\n      \"symbol\": \"BTC-USD\",\n      \"horizon\": \"1d\",\n      \"reason\": \"classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high\"\n    },\n    {\n      \"symbol\": \"BTC-USD\",\n      \"horizon\": \"1h\",\n      \"reason\": \"classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high\"\n    },\n    {\n      \"symbol\": \"BTC-USD\",\n      \"horizon\": \"1mo\",\n      \"reason\": \"regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high\"\n    },\n    {\n      \"symbol\": \"BTC-USD\",\n      \"horizon\": \"1w\",\n      \"reason\": \"classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high\"\n    },\n    {\n      \"symbol\": \"BTC-USD\",\n      \"horizon\": \"3mo\",\n      \"reason\": \"classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high\"\n    },\n    {\n      \"symbol\": \"BTC-USD\",\n      \"horizon\": \"5m\",\n      \"reason\": \"classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high\"\n    },\n    {\n      \"symbol\": \"BTC-USD\",\n      \"horizon\": \"6h\",\n      \"reason\": \"classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high\"\n    },\n    {\n      \"symbol\": \"ETH-USD\",\n      \"horizon\": \"12h\",\n      \"reason\": \"regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high\"\n    },\n    {\n      \"symbol\": \"ETH-USD\",\n      \"horizon\": \"1d\",\n      \"reason\": \"classification_f1_not_above_baseline,martingale_residual_autocorrelation_too_high\"\n    },\n    {\n      \"symbol\": \"ETH-USD\",\n      \"horizon\": \"1h\",\n      \"reason\": \"classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high\"\n    },\n    {\n      \"symbol\": \"ETH-USD\",\n      \"horizon\": \"5m\",\n      \"reason\": \"classification_f1_not_above_baseline,classification_accuracy_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high\"\n    }\n  ],\n  \"registry_path\": \"data/models/registry.json\",\n  \"registry\": {\n    \"active_model_version\": \"daily-20260213-022217\",\n    \"promoted\": {},\n    \"updated_at\": \"2026-02-13T02:23:44.095509+00:00\"\n  }\n}\n",
+      "stderr_tail": ""
+    }
+  ]
+}

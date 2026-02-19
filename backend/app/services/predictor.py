@@ -174,6 +174,9 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
         pred_close = reg_raw
     direction = "up" if raw_prob_up >= 0.5 else "down"
     confidence = round(_calibrate_confidence(raw_prob_up, calibration), 4)
+    settings = get_settings()
+    if settings.prediction_abstain_to_fallback and confidence < float(settings.prediction_confidence_min_for_model):
+        return None, "model_confidence_below_threshold"
 
     horizon_vol, vol_granularity = _realized_volatility(payload.symbol, payload.horizon)
     range_min_pct, range_max_pct, risk_score, risk_level = _prediction_range_and_risk(
@@ -193,6 +196,7 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
             "regression_target": regression_target,
             "volatility_source_granularity": vol_granularity,
             "horizon_volatility": f"{horizon_vol:.6f}",
+            "model_confidence_threshold": f"{float(settings.prediction_confidence_min_for_model):.4f}",
             "artifact_metrics": str(artifact_paths["metrics"]),
         }
 

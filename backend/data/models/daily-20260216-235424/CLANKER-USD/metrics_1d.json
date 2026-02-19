@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-02-16T23:57:06.617430+00:00",
+  "symbol": "CLANKER-USD",
+  "horizon": "1d",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1h",
+  "steps_ahead": 24,
+  "rows_total": 242,
+  "rows_test": 37,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.05405405405405406,
+    "precision": 0.05405405405405406,
+    "recall": 1.0,
+    "f1": 0.10256410256410256,
+    "roc_auc": 0.6142857142857143,
+    "mae": 2.9152461255519735,
+    "rmse": 2.9654554988547335,
+    "mape": 0.09302903213384618
+  },
+  "baseline": {
+    "accuracy": 0.05405405405405406,
+    "f1": 0.10256410256410256,
+    "rmse": 1.4452438305454647,
+    "mae": 1.2713513513513506,
+    "mape": 0.04046418995803269
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.2942341344493355,
+    "variance": 0.2952663431419836,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "classification_accuracy_not_above_baseline",
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CLANKER-USD/cls_1d.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CLANKER-USD/reg_1d.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CLANKER-USD/calibration_1d.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CLANKER-USD/metrics_1d.json"
+  }
+}

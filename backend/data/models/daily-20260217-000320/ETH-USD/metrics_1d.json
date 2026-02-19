@@ -1,0 +1,62 @@
+{
+  "generated_at": "2026-02-17T00:04:55.636415+00:00",
+  "symbol": "ETH-USD",
+  "horizon": "1d",
+  "status": "ok",
+  "model_version": "daily-20260217-000320",
+  "feature_version": "v2",
+  "granularity": "1h",
+  "steps_ahead": 24,
+  "rows_total": 243,
+  "rows_test": 37,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "gradient_boosting_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.6486486486486487,
+    "precision": 0.3076923076923077,
+    "recall": 0.5,
+    "f1": 0.38095238095238093,
+    "roc_auc": 0.5689655172413793,
+    "mae": 31.85507673724723,
+    "rmse": 38.94703833337632,
+    "mape": 0.016174766484323578
+  },
+  "baseline": {
+    "accuracy": 0.21621621621621623,
+    "f1": 0.35555555555555557,
+    "rmse": 87.3271088215746,
+    "mae": 77.11567567567565,
+    "mape": 0.03912407406705927
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.6002392688090191,
+    "variance": 970.5788675889535,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260217-000320/ETH-USD/cls_1d.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260217-000320/ETH-USD/reg_1d.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260217-000320/ETH-USD/calibration_1d.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260217-000320/ETH-USD/metrics_1d.json"
+  }
+}

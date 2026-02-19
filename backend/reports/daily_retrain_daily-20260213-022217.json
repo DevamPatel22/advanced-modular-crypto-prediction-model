@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-02-13T02:22:17.387007+00:00",
+  "model_version": "daily-20260213-022217",
+  "phase": "phase3",
+  "steps": [
+    {
+      "step": "ingestion",
+      "status": "ok"
+    },
+    {
+      "step": "train_all_symbols",
+      "status": "ok",
+      "returncode": 0,
+      "stdout_tail": "Completed 20/119 symbols\nCompleted 40/119 symbols\nCompleted 60/119 symbols\nCompleted 80/119 symbols\nCompleted 100/119 symbols\n{\n  \"summary_report\": \"/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/reports/summary_report_daily-20260213-022217.json\",\n  \"manifest\": \"/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260213-022217/manifest.json\"\n}\n",
+      "stderr_tail": ""
+    },
+    {
+      "step": "promote_model",
+      "status": "ok",
+      "returncode": 0,
+      "stdout_tail": "{\n  \"generated_at\": \"2026-02-13T02:23:44.095790+00:00\",\n  \"previous_active\": \"daily-20260213-022207\",\n  \"new_active\": \"daily-20260213-022217\",\n  \"phase\": \"phase3\",\n  \"promoted_symbols\": 0,\n  \"promoted_pairs\": 0,\n  \"failed_pairs\": [\n    {\n      \"symbol\": \"BTC-USD\",\n      \"horizon\": \"1d\",\n      \"reason\": \"classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high\"\n    },\n    {\n      \"symbol\": \"BTC-USD\",\n      \"horizon\": \"1mo\",\n      \"reason\": \"regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high\"\n    },\n    {\n      \"symbol\": \"BTC-USD\",\n      \"horizon\": \"1w\",\n      \"reason\": \"classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high\"\n    },\n    {\n      \"symbol\": \"BTC-USD\",\n      \"horizon\": \"3mo\",\n      \"reason\": \"classification_f1_not_above_baseline,regression_rmse_not_below_baseline,martingale_residual_autocorrelation_too_high\"\n    }\n  ],\n  \"registry_path\": \"data/models/registry.json\",\n  \"registry\": {\n    \"active_model_version\": \"daily-20260213-022217\",\n    \"promoted\": {},\n    \"updated_at\": \"2026-02-13T02:23:44.095509+00:00\"\n  }\n}\n",
+      "stderr_tail": ""
+    }
+  ]
+}

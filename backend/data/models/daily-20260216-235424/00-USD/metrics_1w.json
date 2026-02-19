@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-02-16T23:55:55.704458+00:00",
+  "symbol": "00-USD",
+  "horizon": "1w",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1d",
+  "steps_ahead": 7,
+  "rows_total": 1189,
+  "rows_test": 179,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "gradient_boosting_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.547486033519553,
+    "precision": 0.3218390804597701,
+    "recall": 0.56,
+    "f1": 0.40875912408759124,
+    "roc_auc": 0.5587596899224806,
+    "mae": 0.05469273643302367,
+    "rmse": 0.057102131521222295,
+    "mape": 7.6895731494514346
+  },
+  "baseline": {
+    "accuracy": 0.27932960893854747,
+    "f1": 0.4366812227074236,
+    "rmse": 0.0008601351069655493,
+    "mae": 0.0006553072625698325,
+    "mape": 0.0816663584940835
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.5043343905059169,
+    "variance": 0.0002693580057347732,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/00-USD/cls_1w.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/00-USD/reg_1w.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/00-USD/calibration_1w.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/00-USD/metrics_1w.json"
+  }
+}

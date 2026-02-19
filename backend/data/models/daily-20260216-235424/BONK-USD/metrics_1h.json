@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-02-16T23:56:49.961957+00:00",
+  "symbol": "BONK-USD",
+  "horizon": "1h",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1m",
+  "steps_ahead": 60,
+  "rows_total": 707,
+  "rows_test": 107,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "gradient_boosting_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.102803738317757,
+    "precision": 0.05747126436781609,
+    "recall": 0.2631578947368421,
+    "f1": 0.09433962264150944,
+    "roc_auc": 0.1728468899521531,
+    "mae": 3.9419887749848786e-07,
+    "rmse": 4.220824347835796e-07,
+    "mape": 0.059984112516981554
+  },
+  "baseline": {
+    "accuracy": 0.17757009345794392,
+    "f1": 0.30158730158730157,
+    "rmse": 3.3429238978648454e-07,
+    "mae": 2.577570093457944e-07,
+    "mape": 0.03921040116422821
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.23462543852174997,
+    "variance": 8.450168356976346e-14,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "classification_accuracy_not_above_baseline",
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BONK-USD/cls_1h.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BONK-USD/reg_1h.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BONK-USD/calibration_1h.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BONK-USD/metrics_1h.json"
+  }
+}

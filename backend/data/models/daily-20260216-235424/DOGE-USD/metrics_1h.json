@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-02-16T23:57:21.060717+00:00",
+  "symbol": "DOGE-USD",
+  "horizon": "1h",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1m",
+  "steps_ahead": 60,
+  "rows_total": 1021,
+  "rows_test": 154,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.5064935064935064,
+    "precision": 0.5066666666666667,
+    "recall": 0.9743589743589743,
+    "f1": 0.6666666666666666,
+    "roc_auc": 0.5524628879892038,
+    "mae": 0.007467081593791119,
+    "rmse": 0.007769793982578746,
+    "mape": 0.07417248463533126
+  },
+  "baseline": {
+    "accuracy": 0.5064935064935064,
+    "f1": 0.6724137931034483,
+    "rmse": 0.004339589049309062,
+    "mae": 0.001634090909090909,
+    "mape": 0.01623935922856299
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.8371797475344893,
+    "variance": 4.612391003382776e-06,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "classification_accuracy_not_above_baseline",
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/DOGE-USD/cls_1h.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/DOGE-USD/reg_1h.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/DOGE-USD/calibration_1h.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/DOGE-USD/metrics_1h.json"
+  }
+}

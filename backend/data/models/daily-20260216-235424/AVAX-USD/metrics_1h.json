@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-02-16T23:56:26.586476+00:00",
+  "symbol": "AVAX-USD",
+  "horizon": "1h",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1m",
+  "steps_ahead": 60,
+  "rows_total": 746,
+  "rows_test": 112,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "gradient_boosting_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.6428571428571429,
+    "precision": 0.6666666666666666,
+    "recall": 0.7692307692307693,
+    "f1": 0.7142857142857143,
+    "roc_auc": 0.7801963993453356,
+    "mae": 0.14850628444850522,
+    "rmse": 0.1589023540599824,
+    "mape": 0.01604524765552382
+  },
+  "baseline": {
+    "accuracy": 0.5803571428571429,
+    "f1": 0.7344632768361582,
+    "rmse": 0.15709983177221118,
+    "mae": 0.1044642857142853,
+    "mape": 0.011310026727960332
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.7862859488213264,
+    "variance": 0.0038302478770962903,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AVAX-USD/cls_1h.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AVAX-USD/reg_1h.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AVAX-USD/calibration_1h.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AVAX-USD/metrics_1h.json"
+  }
+}

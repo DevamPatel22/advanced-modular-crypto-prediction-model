@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-02-16T23:56:13.709940+00:00",
+  "symbol": "ALGO-USD",
+  "horizon": "5m",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1m",
+  "steps_ahead": 5,
+  "rows_total": 494,
+  "rows_test": 75,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "gradient_boosting_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.30666666666666664,
+    "precision": 0.09375,
+    "recall": 0.11538461538461539,
+    "f1": 0.10344827586206896,
+    "roc_auc": 0.2339089481946625,
+    "mae": 0.0015081813144033572,
+    "rmse": 0.002021539743665527,
+    "mape": 0.01585049807377571
+  },
+  "baseline": {
+    "accuracy": 0.3466666666666667,
+    "f1": 0.5148514851485149,
+    "rmse": 0.0012478781991845202,
+    "mae": 0.00047333333333333206,
+    "mape": 0.005012265379225458
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.4015776138250931,
+    "variance": 2.8810738466811437e-06,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "classification_accuracy_not_above_baseline",
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ALGO-USD/cls_5m.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ALGO-USD/reg_5m.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ALGO-USD/calibration_5m.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ALGO-USD/metrics_5m.json"
+  }
+}

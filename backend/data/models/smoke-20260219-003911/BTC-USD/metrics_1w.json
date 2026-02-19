@@ -1,0 +1,89 @@
+{
+  "generated_at": "2026-02-19T05:39:28.931201+00:00",
+  "symbol": "BTC-USD",
+  "horizon": "1w",
+  "status": "ok",
+  "model_version": "smoke-20260219-003911",
+  "feature_version": "v2",
+  "granularity": "1d",
+  "steps_ahead": 7,
+  "rows_total": 1470,
+  "rows_test": 221,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "extra_trees_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.502262443438914,
+    "precision": 0.53125,
+    "recall": 0.4396551724137931,
+    "f1": 0.4811320754716981,
+    "roc_auc": 0.4912972085385879,
+    "mae": 5496.604452622793,
+    "rmse": 7280.885603585002,
+    "mape": 0.05746930737299664
+  },
+  "baseline": {
+    "accuracy": 0.5248868778280543,
+    "f1": 0.6884272997032641,
+    "rmse": 5781.247923868155,
+    "mae": 4445.73628959276,
+    "mape": 0.04587542974359267
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.7906097199605334,
+    "variance": 44080343.21635163,
+    "pass": false
+  },
+  "martingale_enforced": false,
+  "regression_target": "log_return",
+  "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+  "classification_label_mode": "triple_barrier",
+  "triple_barrier_sigma_mult": 1.0,
+  "log_return_clip": 1.25,
+  "confidence_slice": {
+    "threshold": 0.62,
+    "coverage": 0.5429864253393665,
+    "selected_samples": 120.0,
+    "precision": 0.5142857142857142,
+    "accuracy": 0.49166666666666664
+  },
+  "regime_breakdown": {
+    "down": {
+      "count": 100.0,
+      "accuracy": 0.52,
+      "f1": 0.5714285714285714
+    },
+    "up": {
+      "count": 121.0,
+      "accuracy": 0.48760330578512395,
+      "f1": 0.38
+    }
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "classification_accuracy_not_above_baseline",
+      "regression_rmse_not_below_baseline"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10 (strict mode only)"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/smoke-20260219-003911/BTC-USD/cls_1w.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/smoke-20260219-003911/BTC-USD/reg_1w.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/smoke-20260219-003911/BTC-USD/calibration_1w.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/smoke-20260219-003911/BTC-USD/metrics_1w.json"
+  }
+}

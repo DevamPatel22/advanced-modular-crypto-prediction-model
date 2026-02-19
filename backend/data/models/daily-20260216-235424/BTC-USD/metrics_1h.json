@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-02-16T23:56:53.103089+00:00",
+  "symbol": "BTC-USD",
+  "horizon": "1h",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1h",
+  "steps_ahead": 1,
+  "rows_total": 766,
+  "rows_test": 115,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "gradient_boosting_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.5304347826086957,
+    "precision": 0.6363636363636364,
+    "recall": 0.3333333333333333,
+    "f1": 0.4375,
+    "roc_auc": 0.5198412698412699,
+    "mae": 14662.139927665316,
+    "rmse": 15234.321470226421,
+    "mape": 0.21379992681655133
+  },
+  "baseline": {
+    "accuracy": 0.5478260869565217,
+    "f1": 0.7078651685393258,
+    "rmse": 372.2384731032786,
+    "mae": 263.67000000000064,
+    "mape": 0.0038649163035508007
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.6067035616607,
+    "variance": 17106203.399764217,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "classification_accuracy_not_above_baseline",
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BTC-USD/cls_1h.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BTC-USD/reg_1h.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BTC-USD/calibration_1h.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BTC-USD/metrics_1h.json"
+  }
+}

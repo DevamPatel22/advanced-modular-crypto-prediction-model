@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-02-16T23:56:21.643907+00:00",
+  "symbol": "ASTER-USD",
+  "horizon": "1d",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1h",
+  "steps_ahead": 24,
+  "rows_total": 242,
+  "rows_test": 37,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "gradient_boosting_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.24324324324324326,
+    "precision": 0.24324324324324326,
+    "recall": 1.0,
+    "f1": 0.391304347826087,
+    "roc_auc": 0.6587301587301587,
+    "mae": 0.008119598149185652,
+    "rmse": 0.010200567669726112,
+    "mape": 0.011282306755041776
+  },
+  "baseline": {
+    "accuracy": 0.24324324324324326,
+    "f1": 0.391304347826087,
+    "rmse": 0.01117429482629061,
+    "mae": 0.00908108108108109,
+    "mape": 0.012606474571921137
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.4482562749568806,
+    "variance": 9.128518020260321e-05,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "classification_accuracy_not_above_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ASTER-USD/cls_1d.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ASTER-USD/reg_1d.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ASTER-USD/calibration_1d.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ASTER-USD/metrics_1d.json"
+  }
+}

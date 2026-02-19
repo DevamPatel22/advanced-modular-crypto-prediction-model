@@ -1,0 +1,63 @@
+{
+  "generated_at": "2026-02-16T23:56:24.796066+00:00",
+  "symbol": "AUCTION-USD",
+  "horizon": "1d",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1h",
+  "steps_ahead": 24,
+  "rows_total": 242,
+  "rows_test": 37,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "gradient_boosting_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.7297297297297297,
+    "precision": 0.5454545454545454,
+    "recall": 1.0,
+    "f1": 0.7058823529411765,
+    "roc_auc": 0.95,
+    "mae": 0.24064207562762296,
+    "rmse": 0.259512224510566,
+    "mape": 0.046060775489711256
+  },
+  "baseline": {
+    "accuracy": 0.32432432432432434,
+    "f1": 0.4897959183673469,
+    "rmse": 0.18596715780960843,
+    "mae": 0.16486486486486487,
+    "mape": 0.03165566474923856
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.5362651916302679,
+    "variance": 0.01646898987850728,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AUCTION-USD/cls_1d.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AUCTION-USD/reg_1d.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AUCTION-USD/calibration_1d.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/AUCTION-USD/metrics_1d.json"
+  }
+}

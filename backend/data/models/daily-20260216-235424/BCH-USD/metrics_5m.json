@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-02-16T23:56:36.052697+00:00",
+  "symbol": "BCH-USD",
+  "horizon": "5m",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1m",
+  "steps_ahead": 5,
+  "rows_total": 1027,
+  "rows_test": 155,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.47096774193548385,
+    "precision": 0.40625,
+    "recall": 0.609375,
+    "f1": 0.4875,
+    "roc_auc": 0.5120192307692308,
+    "mae": 13.392375524720363,
+    "rmse": 14.915579004082995,
+    "mape": 0.023431646305782147
+  },
+  "baseline": {
+    "accuracy": 0.4129032258064516,
+    "f1": 0.5844748858447488,
+    "rmse": 0.9527335883249703,
+    "mae": 0.7550322580645116,
+    "mape": 0.0013219675370525995
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.8849478748926626,
+    "variance": 43.11877483191237,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "regression_rmse_not_below_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BCH-USD/cls_5m.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BCH-USD/reg_5m.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BCH-USD/calibration_5m.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/BCH-USD/metrics_5m.json"
+  }
+}

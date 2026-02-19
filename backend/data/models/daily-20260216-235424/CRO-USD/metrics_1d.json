@@ -1,0 +1,62 @@
+{
+  "generated_at": "2026-02-16T23:57:11.755422+00:00",
+  "symbol": "CRO-USD",
+  "horizon": "1d",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1h",
+  "steps_ahead": 24,
+  "rows_total": 242,
+  "rows_test": 37,
+  "selected_models": {
+    "classifier": "logistic_regression",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.7837837837837838,
+    "precision": 0.42857142857142855,
+    "recall": 1.0,
+    "f1": 0.6,
+    "roc_auc": 0.8870967741935484,
+    "mae": 0.0019843802836175474,
+    "rmse": 0.0022813007418545648,
+    "mape": 0.024730139365087445
+  },
+  "baseline": {
+    "accuracy": 0.16216216216216217,
+    "f1": 0.27906976744186046,
+    "rmse": 0.0023661817800448505,
+    "mae": 0.0020135135135135136,
+    "mape": 0.02520993738935001
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.7473067190516387,
+    "variance": 1.2665679647761298e-06,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CRO-USD/cls_1d.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CRO-USD/reg_1d.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CRO-USD/calibration_1d.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/CRO-USD/metrics_1d.json"
+  }
+}

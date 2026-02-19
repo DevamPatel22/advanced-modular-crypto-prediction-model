@@ -1,0 +1,62 @@
+{
+  "generated_at": "2026-02-16T23:57:26.627669+00:00",
+  "symbol": "EGLD-USD",
+  "horizon": "1d",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1h",
+  "steps_ahead": 24,
+  "rows_total": 241,
+  "rows_test": 37,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "gradient_boosting_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.1891891891891892,
+    "precision": 0.03225806451612903,
+    "recall": 1.0,
+    "f1": 0.0625,
+    "roc_auc": 0.2777777777777778,
+    "mae": 0.22310930348493604,
+    "rmse": 0.24286873862336036,
+    "mape": 0.0454645409059095
+  },
+  "baseline": {
+    "accuracy": 0.02702702702702703,
+    "f1": 0.05263157894736842,
+    "rmse": 0.31899334907918814,
+    "mae": 0.2821621621621622,
+    "mape": 0.05809188826245893
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.6280639808668843,
+    "variance": 0.012698234685691695,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/EGLD-USD/cls_1d.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/EGLD-USD/reg_1d.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/EGLD-USD/calibration_1d.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/EGLD-USD/metrics_1d.json"
+  }
+}

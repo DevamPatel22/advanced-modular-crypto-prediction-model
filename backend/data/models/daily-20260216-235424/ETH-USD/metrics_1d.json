@@ -1,0 +1,62 @@
+{
+  "generated_at": "2026-02-16T23:57:34.784986+00:00",
+  "symbol": "ETH-USD",
+  "horizon": "1d",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1h",
+  "steps_ahead": 24,
+  "rows_total": 242,
+  "rows_test": 37,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "random_forest_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.6756756756756757,
+    "precision": 0.2727272727272727,
+    "recall": 0.42857142857142855,
+    "f1": 0.3333333333333333,
+    "roc_auc": 0.6,
+    "mae": 20.434929781094635,
+    "rmse": 26.366957812459237,
+    "mape": 0.010272444667442999
+  },
+  "baseline": {
+    "accuracy": 0.1891891891891892,
+    "f1": 0.3181818181818182,
+    "rmse": 87.45078860151592,
+    "mae": 77.44918918918917,
+    "mape": 0.03927458870854672
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.716019756077285,
+    "variance": 689.3484040119647,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ETH-USD/cls_1d.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ETH-USD/reg_1d.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ETH-USD/calibration_1d.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ETH-USD/metrics_1d.json"
+  }
+}

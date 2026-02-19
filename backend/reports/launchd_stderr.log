@@ -1,0 +1,2 @@
+/bin/zsh: can't open input file: /Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/scripts/run_daily_retrain.sh
+zsh:source:1: operation not permitted: .venv/bin/activate

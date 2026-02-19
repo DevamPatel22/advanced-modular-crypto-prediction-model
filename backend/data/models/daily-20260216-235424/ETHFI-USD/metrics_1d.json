@@ -1,0 +1,63 @@
+{
+  "generated_at": "2026-02-16T23:57:35.237381+00:00",
+  "symbol": "ETHFI-USD",
+  "horizon": "1d",
+  "status": "ok",
+  "model_version": "daily-20260216-235424",
+  "feature_version": "v2",
+  "granularity": "1h",
+  "steps_ahead": 24,
+  "rows_total": 241,
+  "rows_test": 37,
+  "selected_models": {
+    "classifier": "gradient_boosting_classifier",
+    "regressor": "gradient_boosting_regressor"
+  },
+  "metrics": {
+    "accuracy": 0.5945945945945946,
+    "precision": 0.125,
+    "recall": 0.1111111111111111,
+    "f1": 0.11764705882352941,
+    "roc_auc": 0.6547619047619048,
+    "mae": 0.0208890973548955,
+    "rmse": 0.021922083473092373,
+    "mape": 0.043954925994830404
+  },
+  "baseline": {
+    "accuracy": 0.24324324324324326,
+    "f1": 0.391304347826087,
+    "rmse": 0.024197944965234974,
+    "mae": 0.020567567567567564,
+    "mape": 0.04364428123412358
+  },
+  "martingale_diagnostic": {
+    "acf1": 0.48809812468201286,
+    "variance": 4.422335549892758e-05,
+    "pass": false
+  },
+  "promotion_gate": {
+    "passed": false,
+    "failed_reasons": [
+      "classification_f1_not_above_baseline",
+      "martingale_residual_autocorrelation_too_high"
+    ],
+    "rules": {
+      "classification": [
+        "f1 > baseline.f1",
+        "accuracy > baseline.accuracy"
+      ],
+      "regression": [
+        "rmse < baseline.rmse"
+      ],
+      "stochastic": [
+        "abs(residual_acf1) <= 0.10"
+      ]
+    }
+  },
+  "artifact_paths": {
+    "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ETHFI-USD/cls_1d.joblib",
+    "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ETHFI-USD/reg_1d.joblib",
+    "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ETHFI-USD/calibration_1d.json",
+    "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260216-235424/ETHFI-USD/metrics_1d.json"
+  }
+}
