@@ -185,7 +185,7 @@ a {
 
 .home-list .list-head {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(92px, auto) minmax(170px, auto) auto;
+  grid-template-columns: minmax(160px, 1fr) minmax(92px, auto) minmax(170px, auto);
   gap: 8px;
   font-size: 0.76rem;
   text-transform: uppercase;
@@ -201,30 +201,49 @@ a {
   text-align: right;
 }
 
-.home-list ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.home-list {
   max-height: 74vh;
   overflow: auto;
 }
 
+.home-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.section-label {
+  margin: 10px 10px 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7c897d;
+}
+
 .home-list li {
-  display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(92px, auto) minmax(170px, auto) auto;
-  gap: 8px;
-  align-items: center;
-  padding: 10px;
+  padding: 0;
   border-bottom: 1px solid #f0f4f0;
 }
 
-.market-row {
+.market-row-link {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(92px, auto) minmax(170px, auto);
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
   cursor: pointer;
-  transition: background 0.14s ease;
+  transition: background 0.14s ease, transform 0.14s ease;
 }
 
-.market-row:hover {
+.market-row-link:hover {
   background: #f8fbf8;
+  transform: translateY(-1px);
+}
+
+.market-row-link:focus-visible {
+  outline: 2px solid #9ad7b0;
+  outline-offset: -2px;
 }
 
 .home-list .sym {
@@ -263,22 +282,6 @@ a {
 .change-sub {
   font-size: 0.75rem;
   opacity: 0.86;
-}
-
-.open-btn {
-  border: 1px solid #d1ded1;
-  border-radius: 999px;
-  background: #f8fcf8;
-  color: #2f633f;
-  font-size: 0.76rem;
-  font-weight: 800;
-  padding: 6px 10px;
-  cursor: pointer;
-}
-
-.open-btn:hover {
-  background: rgba(0, 200, 83, 0.12);
-  border-color: rgba(0, 200, 83, 0.3);
 }
 
 .rh-main {
@@ -351,6 +354,24 @@ a {
   font-size: 0.82rem;
   color: #6b766b;
   font-weight: 700;
+}
+
+.watch-asset-btn {
+  margin-top: 10px;
+  border: 1px solid #d8e3d8;
+  background: #f8fbf8;
+  color: #3f5b3f;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.8rem;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.watch-asset-btn.active {
+  border-color: #f0d98b;
+  background: #fffbe8;
+  color: #8b6a00;
 }
 
 select {
@@ -659,5 +680,11 @@ select {
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
+  }
+
+  .home-list .list-head,
+  .market-row-link {
+    grid-template-columns: minmax(110px, 1fr) minmax(78px, auto) minmax(120px, auto);
+    gap: 6px;
   }
 }

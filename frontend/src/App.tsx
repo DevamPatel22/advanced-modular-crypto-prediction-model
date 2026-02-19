@@ -105,15 +105,43 @@ function linePath(values: Array<number | null>, xAt: (i: number) => number, yAt:
 }
 
 function formatCurrency(value: number): string {
+  const absolute = Math.abs(value);
+  let fractionDigits = 2;
+
+  if (absolute < 1 && absolute > 0) {
+    const fixed = absolute.toFixed(16);
+    const trimmed = fixed.replace(/0+$/, "");
+    const decimalPart = trimmed.split(".")[1] ?? "";
+    fractionDigits = Math.min(Math.max(decimalPart.length, 1), 16);
+  }
+
   return new Intl.NumberFormat(undefined, {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: value >= 100 ? 2 : 4,
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
   }).format(value);
 }
 
 function formatSignedCurrency(value: number): string {
-  return `${value >= 0 ? "+" : "-"}${formatCurrency(Math.abs(value))}`;
+  const absolute = Math.abs(value);
+  let fractionDigits = 2;
+
+  if (absolute < 1 && absolute > 0) {
+    const fixed = absolute.toFixed(8);
+    const trimmed = fixed.replace(/0+$/, "");
+    const decimalPart = trimmed.split(".")[1] ?? "";
+    fractionDigits = Math.min(Math.max(decimalPart.length, 1), 8);
+  }
+
+  const formatted = new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(absolute);
+
+  return `${value >= 0 ? "+" : "-"}${formatted}`;
 }
 
 function formatSignedPercent(value: number): string {
@@ -140,6 +168,7 @@ function getCoinMeta(symbol: string): { base: string; quote: string; name: strin
 }
 
 function App() {
+  const WATCHLIST_STORAGE_KEY = "crypto_watchlist_symbols_v1";
   const [view, setView] = useState<ViewMode>("home");
   const [search, setSearch] = useState("");
   const [symbols, setSymbols] = useState<Symbol[]>(fallbackSymbols);
@@ -149,6 +178,17 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [symbolsLoading, setSymbolsLoading] = useState(true);
   const [symbolsError, setSymbolsError] = useState<string | null>(null);
+  const [watchlistSymbols, setWatchlistSymbols] = useState<Symbol[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = window.localStorage.getItem("crypto_watchlist_symbols_v1");
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as string[];
+      return Array.isArray(parsed) ? parsed.filter((item): item is Symbol => typeof item === "string") : [];
+    } catch {
+      return [];
+    }
+  });
   const [marketSnapshots, setMarketSnapshots] = useState<Record<string, MarketSnapshot>>({});
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PredictionResponse | null>(null);
@@ -199,11 +239,11 @@ function App() {
 
   const watchlist = useMemo(
     () =>
-      symbols.slice(0, 12).map((asset) => ({
+      watchlistSymbols.filter((asset) => symbols.includes(asset)).map((asset) => ({
         symbol: asset,
         changePct: marketSnapshots[asset]?.changePct ?? 0,
       })),
-    [marketSnapshots, symbols],
+    [marketSnapshots, symbols, watchlistSymbols],
   );
 
   const filteredSymbols = useMemo(() => {
@@ -214,6 +254,20 @@ function App() {
       return meta.searchTokens.some((token) => token.includes(query));
     });
   }, [search, symbols]);
+
+  const filteredWatchlistSymbols = useMemo(
+    () => filteredSymbols.filter((asset) => watchlistSymbols.includes(asset)),
+    [filteredSymbols, watchlistSymbols],
+  );
+  const filteredMarketSymbols = useMemo(
+    () => filteredSymbols.filter((asset) => !watchlistSymbols.includes(asset)),
+    [filteredSymbols, watchlistSymbols],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(watchlistSymbols));
+  }, [WATCHLIST_STORAGE_KEY, watchlistSymbols]);
 
   useEffect(() => {
     if (symbolsLoading) return;
@@ -271,6 +325,7 @@ function App() {
         if (!active) return;
         if (liveSymbols.length > 0) {
           setSymbols(liveSymbols);
+          setWatchlistSymbols((current) => current.filter((item) => liveSymbols.includes(item)));
           if (!liveSymbols.includes(symbol)) {
             setSymbol(liveSymbols[0]);
           }
@@ -457,6 +512,50 @@ function App() {
     setView("asset");
   }
 
+  function toggleWatchlist(asset: Symbol) {
+    setWatchlistSymbols((current) => {
+      if (current.includes(asset)) {
+        return current.filter((item) => item !== asset);
+      }
+      return [asset, ...current];
+    });
+  }
+
+  function renderMarketRow(asset: Symbol) {
+    const snapshot = marketSnapshots[asset];
+    const changeClass = (snapshot?.changePct ?? 0) >= 0 ? "up" : "down";
+    return (
+      <li key={asset}>
+        <a
+          href={`#asset-${asset}`}
+          className="market-row-link"
+          onClick={(event) => {
+            event.preventDefault();
+            openAsset(asset);
+          }}
+        >
+          <span className="sym">
+            <span className="sym-name">{getCoinMeta(asset).name}</span>
+            <span className="sym-code">{asset}</span>
+          </span>
+          <span className="price-cell align-right">
+            {snapshot ? formatCurrency(snapshot.price) : "--"}
+          </span>
+          <span className={`change-cell align-right ${changeClass}`}>
+            {snapshot ? (
+              <>
+                <span className="change-main">{formatSignedCurrency(snapshot.changeUsd)}</span>
+                <span className="change-sub">{formatSignedPercent(snapshot.changePct)}</span>
+              </>
+            ) : (
+              "--"
+            )}
+          </span>
+        </a>
+      </li>
+    );
+  }
+
   return (
     <div className="rh-app">
       <header className="rh-topbar">
@@ -506,37 +605,14 @@ function App() {
               <span>Symbol</span>
               <span>Price</span>
               <span>Today</span>
-              <span>Action</span>
             </div>
+            {filteredWatchlistSymbols.length > 0 ? <p className="section-label">Watchlist</p> : null}
             <ul>
-              {filteredSymbols.slice(0, 250).map((asset) => {
-                const snapshot = marketSnapshots[asset];
-                const changeClass = (snapshot?.changePct ?? 0) >= 0 ? "up" : "down";
-                return (
-                  <li key={asset} className="market-row" onClick={() => openAsset(asset)}>
-                    <span className="sym">
-                      <span className="sym-name">{getCoinMeta(asset).name}</span>
-                      <span className="sym-code">{asset}</span>
-                    </span>
-                    <span className="price-cell align-right">
-                      {snapshot ? formatCurrency(snapshot.price) : "--"}
-                    </span>
-                    <span className={`change-cell align-right ${changeClass}`}>
-                      {snapshot ? (
-                        <>
-                          <span className="change-main">{formatSignedCurrency(snapshot.changeUsd)}</span>
-                          <span className="change-sub">{formatSignedPercent(snapshot.changePct)}</span>
-                        </>
-                      ) : (
-                        "--"
-                      )}
-                    </span>
-                    <button type="button" className="open-btn" onClick={(event) => { event.stopPropagation(); openAsset(asset); }}>
-                      Open
-                    </button>
-                  </li>
-                );
-              })}
+              {filteredWatchlistSymbols.slice(0, 250).map(renderMarketRow)}
+            </ul>
+            <p className="section-label">{filteredWatchlistSymbols.length > 0 ? "All Crypto" : "Crypto"}</p>
+            <ul>
+              {filteredMarketSymbols.slice(0, 250).map(renderMarketRow)}
             </ul>
           </section>
         </main>
@@ -569,6 +645,13 @@ function App() {
                     ))}
                   </select>
                 </label>
+                <button
+                  type="button"
+                  className={watchlistSymbols.includes(symbol) ? "watch-asset-btn active" : "watch-asset-btn"}
+                  onClick={() => toggleWatchlist(symbol)}
+                >
+                  {watchlistSymbols.includes(symbol) ? "Remove from Watchlist" : "Add to Watchlist"}
+                </button>
               </div>
             </div>
 
@@ -703,18 +786,22 @@ function App() {
 
             <section className="side-card watchlist">
               <h3>Watchlist</h3>
-              <ul>
-                {watchlist.map((asset) => (
-                  <li key={asset.symbol}>
-                    <button type="button" onClick={() => setSymbol(asset.symbol)} className="watch-item">
-                      <span>{asset.symbol}</span>
-                      <span className={asset.changePct >= 0 ? "up" : "down"}>
-                        {asset.changePct >= 0 ? "+" : ""}{asset.changePct.toFixed(2)}%
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              {watchlist.length === 0 ? (
+                <p className="muted">No symbols in watchlist yet. Add from Markets.</p>
+              ) : (
+                <ul>
+                  {watchlist.map((asset) => (
+                    <li key={asset.symbol}>
+                      <button type="button" onClick={() => openAsset(asset.symbol)} className="watch-item">
+                        <span>{asset.symbol}</span>
+                        <span className={asset.changePct >= 0 ? "up" : "down"}>
+                          {asset.changePct >= 0 ? "+" : ""}{asset.changePct.toFixed(2)}%
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
           </aside>
         </main>
