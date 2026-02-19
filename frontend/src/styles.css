@@ -185,7 +185,7 @@ a {
 
 .home-list .list-head {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(160px, 1fr) minmax(92px, auto) minmax(170px, auto) auto;
   gap: 8px;
   font-size: 0.76rem;
   text-transform: uppercase;
@@ -194,6 +194,11 @@ a {
   padding: 8px 10px;
   border-bottom: 1px solid #edf2ed;
   font-weight: 700;
+}
+
+.home-list .list-head span:nth-child(2),
+.home-list .list-head span:nth-child(3) {
+  text-align: right;
 }
 
 .home-list ul {
@@ -206,11 +211,20 @@ a {
 
 .home-list li {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(160px, 1fr) minmax(92px, auto) minmax(170px, auto) auto;
   gap: 8px;
   align-items: center;
   padding: 10px;
   border-bottom: 1px solid #f0f4f0;
+}
+
+.market-row {
+  cursor: pointer;
+  transition: background 0.14s ease;
+}
+
+.market-row:hover {
+  background: #f8fbf8;
 }
 
 .home-list .sym {
@@ -225,6 +239,30 @@ a {
 .sym-code {
   font-size: 0.76rem;
   color: #708070;
+}
+
+.price-cell {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.change-cell {
+  display: grid;
+  gap: 1px;
+  font-variant-numeric: tabular-nums;
+}
+
+.align-right {
+  text-align: right;
+}
+
+.change-main {
+  font-weight: 700;
+}
+
+.change-sub {
+  font-size: 0.75rem;
+  opacity: 0.86;
 }
 
 .open-btn {

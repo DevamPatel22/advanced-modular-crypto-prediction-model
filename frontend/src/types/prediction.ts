@@ -54,3 +54,13 @@ export interface CandleSeriesResponse {
   source: string;
   candles: CandlePoint[];
 }
+
+export interface TickerResponse {
+  symbol: string;
+  price: number;
+  bid?: number | null;
+  ask?: number | null;
+  volume?: number | null;
+  timestamp: string;
+  source: string;
+}

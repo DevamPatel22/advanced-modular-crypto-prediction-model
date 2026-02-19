@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { fetchCandles, fetchPrediction, fetchTradableSymbols, getApiBaseUrl } from "./lib/api";
+import { fetchCandles, fetchPrediction, fetchTicker, fetchTradableSymbols, getApiBaseUrl } from "./lib/api";
 import type { CandleGranularity, CandlePoint, Horizon, PredictionResponse, Symbol } from "./types/prediction";
 
 const horizons: Horizon[] = ["5m", "1h", "6h", "12h", "1d", "1w", "1mo", "3mo"];
@@ -9,6 +9,11 @@ const rangeKeys = ["1D", "1W", "1M", "1Y", "MAX"] as const;
 type RangeKey = (typeof rangeKeys)[number];
 type ChartType = "candlestick" | "line";
 type ViewMode = "home" | "asset" | "prediction";
+type MarketSnapshot = {
+  price: number;
+  changeUsd: number;
+  changePct: number;
+};
 
 const coinNameByBase: Record<string, string> = {
   BTC: "Bitcoin",
@@ -107,6 +112,14 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
+function formatSignedCurrency(value: number): string {
+  return `${value >= 0 ? "+" : "-"}${formatCurrency(Math.abs(value))}`;
+}
+
+function formatSignedPercent(value: number): string {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
 function toTitleCase(value: string): string {
   return value
     .toLowerCase()
@@ -136,6 +149,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [symbolsLoading, setSymbolsLoading] = useState(true);
   const [symbolsError, setSymbolsError] = useState<string | null>(null);
+  const [marketSnapshots, setMarketSnapshots] = useState<Record<string, MarketSnapshot>>({});
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PredictionResponse | null>(null);
 
@@ -185,15 +199,11 @@ function App() {
 
   const watchlist = useMemo(
     () =>
-      symbols.slice(0, 12).map((asset) => {
-        const score = asset.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-        const pseudoMove = ((score % 220) - 110) / 10;
-        return {
-          symbol: asset,
-          changePct: pseudoMove,
-        };
-      }),
-    [symbols],
+      symbols.slice(0, 12).map((asset) => ({
+        symbol: asset,
+        changePct: marketSnapshots[asset]?.changePct ?? 0,
+      })),
+    [marketSnapshots, symbols],
   );
 
   const filteredSymbols = useMemo(() => {
@@ -204,6 +214,52 @@ function App() {
       return meta.searchTokens.some((token) => token.includes(query));
     });
   }, [search, symbols]);
+
+  useEffect(() => {
+    if (symbolsLoading) return;
+    let active = true;
+    const pendingSymbols = filteredSymbols.filter((asset) => marketSnapshots[asset] === undefined).slice(0, 60);
+    if (pendingSymbols.length === 0) return;
+
+    async function loadSnapshots() {
+      const updates: Record<string, MarketSnapshot> = {};
+      const concurrency = 8;
+      for (let index = 0; index < pendingSymbols.length; index += concurrency) {
+        const batch = pendingSymbols.slice(index, index + concurrency);
+        await Promise.all(
+          batch.map(async (asset) => {
+            try {
+              const [ticker, daily] = await Promise.all([
+                fetchTicker(asset),
+                fetchCandles({
+                  symbol: asset,
+                  granularity: "1d",
+                  limit: 1,
+                  refresh: false,
+                }),
+              ]);
+              const dailyCandle = daily.candles[daily.candles.length - 1];
+              if (!dailyCandle) return;
+              const price = ticker.price;
+              const changeUsd = price - dailyCandle.open;
+              const changePct = dailyCandle.open !== 0 ? (changeUsd / dailyCandle.open) * 100 : 0;
+              updates[asset] = { price, changeUsd, changePct };
+            } catch {
+              return;
+            }
+          }),
+        );
+      }
+
+      if (!active || Object.keys(updates).length === 0) return;
+      setMarketSnapshots((current) => ({ ...current, ...updates }));
+    }
+
+    void loadSnapshots();
+    return () => {
+      active = false;
+    };
+  }, [filteredSymbols, marketSnapshots, symbolsLoading]);
 
   useEffect(() => {
     let active = true;
@@ -448,24 +504,34 @@ function App() {
             {symbolsError ? <p className="error">{symbolsError}</p> : null}
             <div className="list-head">
               <span>Symbol</span>
-              <span>Change</span>
+              <span>Price</span>
+              <span>Today</span>
               <span>Action</span>
             </div>
             <ul>
               {filteredSymbols.slice(0, 250).map((asset) => {
-                const score = asset.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-                const pseudoMove = ((score % 220) - 110) / 10;
+                const snapshot = marketSnapshots[asset];
+                const changeClass = (snapshot?.changePct ?? 0) >= 0 ? "up" : "down";
                 return (
-                  <li key={asset}>
+                  <li key={asset} className="market-row" onClick={() => openAsset(asset)}>
                     <span className="sym">
                       <span className="sym-name">{getCoinMeta(asset).name}</span>
                       <span className="sym-code">{asset}</span>
                     </span>
-                    <span className={pseudoMove >= 0 ? "up" : "down"}>
-                      {pseudoMove >= 0 ? "+" : ""}
-                      {pseudoMove.toFixed(2)}%
+                    <span className="price-cell align-right">
+                      {snapshot ? formatCurrency(snapshot.price) : "--"}
                     </span>
-                    <button type="button" className="open-btn" onClick={() => openAsset(asset)}>
+                    <span className={`change-cell align-right ${changeClass}`}>
+                      {snapshot ? (
+                        <>
+                          <span className="change-main">{formatSignedCurrency(snapshot.changeUsd)}</span>
+                          <span className="change-sub">{formatSignedPercent(snapshot.changePct)}</span>
+                        </>
+                      ) : (
+                        "--"
+                      )}
+                    </span>
+                    <button type="button" className="open-btn" onClick={(event) => { event.stopPropagation(); openAsset(asset); }}>
                       Open
                     </button>
                   </li>

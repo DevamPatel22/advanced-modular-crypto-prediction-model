@@ -4,6 +4,7 @@ import type {
   MarketSymbolsResponse,
   PredictionRequest,
   PredictionResponse,
+  TickerResponse,
 } from "../types/prediction";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
@@ -58,4 +59,14 @@ export async function fetchCandles(params: {
     throw new Error(`Failed to load candles (${response.status}): ${text}`);
   }
   return response.json() as Promise<CandleSeriesResponse>;
+}
+
+export async function fetchTicker(symbol: string): Promise<TickerResponse> {
+  const query = new URLSearchParams({ symbol });
+  const response = await fetch(`${API_BASE_URL}/api/v1/market-data/ticker?${query.toString()}`);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Failed to load ticker (${response.status}): ${text}`);
+  }
+  return response.json() as Promise<TickerResponse>;
 }

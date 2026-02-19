@@ -125,3 +125,8 @@ Then open `http://localhost:5173`.
 - This repository is intentionally developed in phased milestones.
 - Early commits prioritize stable foundations before feature breadth.
 - Public prediction API shape remains stable while backend model quality evolves.
+
+## License
+
+This project is proprietary and licensed under a strict All Rights Reserved model.
+No copying, redistribution, modification, or reuse is permitted without explicit prior written permission.
