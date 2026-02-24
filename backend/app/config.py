@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     ingestion_quote_currency: str = "USD"
     ingestion_symbol_limit: int = 120
     ingestion_granularities: str = "1m,1h,1d"
-    ingestion_limit_per_symbol: int = 200
+    ingestion_limit_per_symbol: int = 5000
     ingestion_cycle_seconds: int = 600
     retrain_schedule_cron: str = "0 2 * * *"
     martingale_gate_mode: str = "bootstrap"

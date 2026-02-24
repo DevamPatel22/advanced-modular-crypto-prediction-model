@@ -5,6 +5,7 @@ import asyncio
 from app.config import get_settings
 from app.services.market_data import get_candles
 from app.services.markets import fetch_symbols_by_quote
+from app.schemas.markets import MarketSymbol
 
 SUPPORTED_GRANULARITIES = {"1m", "5m", "15m", "1h", "6h", "1d"}
 
@@ -15,12 +16,40 @@ def _parse_granularities(raw: str) -> list[str]:
     return filtered or ["1h"]
 
 
+def _parse_symbol_list(raw: str) -> list[str]:
+    return [value.strip().upper() for value in raw.split(",") if value.strip()]
+
+
 async def run_ingestion_cycle() -> None:
     settings = get_settings()
     symbols = await fetch_symbols_by_quote(
         quote=settings.ingestion_quote_currency,
         limit=max(settings.ingestion_symbol_limit, 1),
     )
+    # Always include priority symbols (defaults include BTC/ETH/SOL) even if they fall outside the limit window.
+    priority = _parse_symbol_list(settings.supported_symbols)
+    if priority:
+        full_universe = await fetch_symbols_by_quote(
+            quote=settings.ingestion_quote_currency,
+            limit=2000,
+        )
+        by_symbol = {item.symbol: item for item in symbols}
+        for wanted in priority:
+            if wanted in by_symbol:
+                continue
+            match = next((item for item in full_universe if item.symbol == wanted), None)
+            if match is not None:
+                by_symbol[wanted] = match
+            else:
+                base, quote = wanted.split("-", 1) if "-" in wanted else (wanted, settings.ingestion_quote_currency)
+                by_symbol[wanted] = MarketSymbol(
+                    symbol=wanted,
+                    base_currency=base,
+                    quote_currency=quote,
+                    status="online",
+                )
+        symbols = sorted(by_symbol.values(), key=lambda item: item.symbol)
+
     granularities = _parse_granularities(settings.ingestion_granularities)
     limit = max(settings.ingestion_limit_per_symbol, 50)
 

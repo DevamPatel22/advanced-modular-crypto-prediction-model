@@ -14,7 +14,7 @@ import pandas as pd
 from joblib import load
 
 from app.config import get_settings
-from app.ml.features import FEATURE_COLUMNS, HORIZON_SPECS, HorizonSpec, build_features
+from app.ml.features import FEATURE_COLUMNS, HORIZON_SPECS, HorizonSpec, build_features, feature_columns_for_horizon
 from app.ml.training import clip_log_return_predictions, load_candles
 from app.schemas.prediction import PredictionRequest, PredictionResponse
 from app.services.model_registry import ModelRegistry
@@ -130,20 +130,22 @@ def _prediction_range_and_risk(direction: str, confidence: float, horizon_vol: f
     return round(min_pct, 2), round(max_pct, 2), round(risk_score, 2), risk_level
 
 
-def _latest_features(symbol: str, spec: HorizonSpec) -> tuple[pd.DataFrame, float, str] | None:
+def _latest_features(symbol: str, spec: HorizonSpec, selected_features: list[str] | None = None) -> tuple[pd.DataFrame, float, str, int] | None:
+    active_features = selected_features or feature_columns_for_horizon(spec.label)
     for granularity, _steps in spec.candidates:
         frame = load_candles(symbol.upper(), granularity)
         if frame.empty or len(frame) < 80:
             continue
 
         enriched = build_features(frame)
-        ready = enriched.dropna(subset=FEATURE_COLUMNS).reset_index(drop=True)
+        ready = enriched.dropna(subset=active_features).reset_index(drop=True)
         if ready.empty:
             continue
 
         latest = ready.iloc[[-1]]
         latest_close = float(latest["close"].iloc[0])
-        return latest[FEATURE_COLUMNS], latest_close, granularity
+        regime = int(np.argmax(latest[["markov_prob_down", "markov_prob_flat", "markov_prob_up"]].to_numpy(dtype=float), axis=1)[0])
+        return latest[active_features], latest_close, granularity, regime
 
     return None
 
@@ -158,25 +160,44 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
     if spec is None:
         return None, "unsupported_horizon"
 
-    feature_row = _latest_features(payload.symbol, spec)
+    metrics_meta = _load_metrics(artifact_paths["metrics"])
+    selected_features = metrics_meta.get("feature_columns")
+    if not isinstance(selected_features, list) or not selected_features:
+        selected_features = FEATURE_COLUMNS
+    feature_row = _latest_features(payload.symbol, spec, selected_features=[str(item) for item in selected_features])
     if feature_row is None:
         return None, "insufficient_recent_data_for_feature_window"
 
-    features, latest_close, feature_granularity = feature_row
+    features, latest_close, feature_granularity, regime_id = feature_row
     cls_model = _load_cached_model(artifact_paths["classification"])
     reg_model = _load_cached_model(artifact_paths["regression"])
     calibration = _load_calibration(artifact_paths["calibration"])
-    metrics_meta = _load_metrics(artifact_paths["metrics"])
+    decision_threshold = float(calibration.get("decision_threshold", 0.5))
 
     raw_prob_up = float(cls_model.predict_proba(features)[0][1])
     reg_raw = float(reg_model.predict(features)[0])
+    regime_name = {0: "down", 1: "flat", 2: "up"}.get(regime_id, "flat")
+    regime_paths = metrics_meta.get("regime_artifact_paths")
+    if isinstance(regime_paths, dict):
+        cls_paths = regime_paths.get("classification")
+        reg_paths = regime_paths.get("regression")
+        if isinstance(cls_paths, dict):
+            cls_regime_path = cls_paths.get(regime_name)
+            if isinstance(cls_regime_path, str) and Path(cls_regime_path).exists():
+                regime_cls_model = _load_cached_model(Path(cls_regime_path))
+                raw_prob_up = float(regime_cls_model.predict_proba(features)[0][1])
+        if isinstance(reg_paths, dict):
+            reg_regime_path = reg_paths.get(regime_name)
+            if isinstance(reg_regime_path, str) and Path(reg_regime_path).exists():
+                regime_reg_model = _load_cached_model(Path(reg_regime_path))
+                reg_raw = float(regime_reg_model.predict(features)[0])
     regression_target = str(metrics_meta.get("regression_target", "price_close"))
     if regression_target == "log_return":
         clipped = clip_log_return_predictions(np.array([reg_raw], dtype=float), payload.horizon)
         pred_close = float(latest_close * math.exp(float(clipped[0])))
     else:
         pred_close = reg_raw
-    direction = "up" if raw_prob_up >= 0.5 else "down"
+    direction = "up" if raw_prob_up >= decision_threshold else "down"
     confidence = round(_calibrate_confidence(raw_prob_up, calibration), 4)
     settings = get_settings()
     if settings.prediction_abstain_to_fallback and confidence < float(settings.prediction_confidence_min_for_model):
@@ -197,6 +218,8 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
             "raw_probability_up": f"{raw_prob_up:.6f}",
             "feature_granularity": feature_granularity,
             "latest_close": f"{latest_close:.6f}",
+            "regime_routing": regime_name,
+            "decision_threshold": f"{decision_threshold:.4f}",
             "regression_target": regression_target,
             "volatility_source_granularity": vol_granularity,
             "horizon_volatility": f"{horizon_vol:.6f}",

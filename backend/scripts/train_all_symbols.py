@@ -93,6 +93,7 @@ def main() -> None:
             "phase_1": ["BTC-USD", "ETH-USD", "SOL-USD"],
             "phase_2_batch_size": args.batch_size,
         },
+        "near_pass_candidates": [],
     }
 
     for idx, symbol in enumerate(universe, start=1):
@@ -127,6 +128,18 @@ def main() -> None:
                 symbol_result["summary"]["passed"] = int(symbol_result["summary"]["passed"]) + 1
             else:
                 symbol_result["summary"]["failed"] = int(symbol_result["summary"]["failed"]) + 1
+                delta = entry.get("near_pass_delta", {})
+                if isinstance(delta, dict):
+                    aggregate["near_pass_candidates"].append(
+                        {
+                            "symbol": symbol,
+                            "horizon": spec.label,
+                            "delta_f1": float(delta.get("f1_vs_baseline", -999.0)),
+                            "delta_accuracy": float(delta.get("accuracy_vs_baseline", -999.0)),
+                            "delta_rmse_margin": float(delta.get("rmse_vs_baseline", -999.0)),
+                            "failed_reasons": gate.get("failed_reasons", []),
+                        }
+                    )
 
         symbol_report_path = symbols_report_root / f"{symbol.lower().replace('-', '_')}.json"
         symbol_report_path.write_text(json.dumps(symbol_result, indent=2), encoding="utf-8")
@@ -147,6 +160,14 @@ def main() -> None:
     version_manifest_path.write_text(json.dumps(version_manifest, indent=2), encoding="utf-8")
 
     output_path = PROJECT_ROOT / args.output
+    if isinstance(aggregate.get("near_pass_candidates"), list):
+        aggregate["near_pass_candidates"] = sorted(
+            aggregate["near_pass_candidates"],
+            key=lambda item: (
+                abs(float(item.get("delta_f1", -999.0))) + abs(float(item.get("delta_accuracy", -999.0))),
+                abs(float(item.get("delta_rmse_margin", -999.0))),
+            ),
+        )[:50]
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(aggregate, indent=2), encoding="utf-8")
     print(json.dumps({"summary_report": str(output_path), "manifest": str(version_manifest_path)}, indent=2))

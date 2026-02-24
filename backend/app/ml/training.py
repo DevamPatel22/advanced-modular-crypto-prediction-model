@@ -16,10 +16,14 @@ import pandas as pd
 from joblib import dump
 from sklearn.ensemble import (
     ExtraTreesRegressor,
+    RandomForestClassifier,
+    ExtraTreesClassifier,
     GradientBoostingClassifier,
     GradientBoostingRegressor,
     HistGradientBoostingRegressor,
     RandomForestRegressor,
+    StackingClassifier,
+    StackingRegressor,
 )
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
@@ -36,7 +40,25 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from app.config import get_settings
-from app.ml.features import FEATURE_COLUMNS, FEATURE_VERSION, HORIZON_SPECS, HorizonSpec, build_features
+from app.ml.features import FEATURE_COLUMNS, FEATURE_VERSION, HORIZON_SPECS, HorizonSpec, build_features, feature_columns_for_horizon
+
+try:  # Optional free libraries if installed in runtime.
+    from xgboost import XGBClassifier, XGBRegressor  # type: ignore
+except Exception:  # pragma: no cover
+    XGBClassifier = None  # type: ignore[assignment]
+    XGBRegressor = None  # type: ignore[assignment]
+
+try:
+    from lightgbm import LGBMClassifier, LGBMRegressor  # type: ignore
+except Exception:  # pragma: no cover
+    LGBMClassifier = None  # type: ignore[assignment]
+    LGBMRegressor = None  # type: ignore[assignment]
+
+try:
+    from catboost import CatBoostClassifier, CatBoostRegressor  # type: ignore
+except Exception:  # pragma: no cover
+    CatBoostClassifier = None  # type: ignore[assignment]
+    CatBoostRegressor = None  # type: ignore[assignment]
 
 MIN_SAMPLES = 320
 LOOKBACK_BUFFER = 50
@@ -64,6 +86,7 @@ HORIZON_LOG_RETURN_CLIP: dict[str, float] = {
 
 @dataclass(frozen=True)
 class SplitData:
+    feature_columns: list[str]
     x_train: pd.DataFrame
     x_val: pd.DataFrame
     x_test: pd.DataFrame
@@ -77,6 +100,9 @@ class SplitData:
     current_close_test: np.ndarray
     target_close_val: np.ndarray
     target_close_test: np.ndarray
+    regime_train: np.ndarray
+    regime_val: np.ndarray
+    regime_test: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -84,6 +110,7 @@ class CandidateResult:
     model_name: str
     model: Pipeline
     val_score: float
+    decision_threshold: float = 0.5
 
 
 def _triple_barrier_labels(
@@ -212,8 +239,9 @@ def resolve_horizon_data(symbol: str, spec: HorizonSpec, min_samples: int | None
     return None
 
 
-def _prepare_supervised(df: pd.DataFrame, steps_ahead: int, min_samples: int) -> tuple[pd.DataFrame, SplitData] | None:
+def _prepare_supervised(df: pd.DataFrame, horizon: str, steps_ahead: int, min_samples: int) -> tuple[pd.DataFrame, SplitData] | None:
     settings = get_settings()
+    selected_features = feature_columns_for_horizon(horizon)
     enriched = build_features(df)
     enriched["target_close"] = enriched["close"].shift(-steps_ahead)
     enriched["target_log_return"] = np.log((enriched["target_close"] + 1e-12) / (enriched["close"] + 1e-12))
@@ -230,7 +258,7 @@ def _prepare_supervised(df: pd.DataFrame, steps_ahead: int, min_samples: int) ->
     else:
         enriched["target_up"] = (enriched["target_close"] > enriched["close"]).astype(int)
     enriched = enriched[(enriched["close"] > 0) & (enriched["target_close"] > 0)]
-    enriched = enriched.dropna(subset=FEATURE_COLUMNS + ["target_close", "target_log_return", "target_up"]).reset_index(drop=True)
+    enriched = enriched.dropna(subset=selected_features + ["target_close", "target_log_return", "target_up"]).reset_index(drop=True)
     enriched["target_up"] = enriched["target_up"].astype(int)
 
     if len(enriched) < min_samples:
@@ -245,9 +273,10 @@ def _prepare_supervised(df: pd.DataFrame, steps_ahead: int, min_samples: int) ->
         return None
 
     split = SplitData(
-        x_train=train_df[FEATURE_COLUMNS],
-        x_val=val_df[FEATURE_COLUMNS],
-        x_test=test_df[FEATURE_COLUMNS],
+        feature_columns=selected_features,
+        x_train=train_df[selected_features],
+        x_val=val_df[selected_features],
+        x_test=test_df[selected_features],
         y_train_cls=train_df["target_up"],
         y_val_cls=val_df["target_up"],
         y_test_cls=test_df["target_up"].to_numpy(dtype=float),
@@ -258,12 +287,15 @@ def _prepare_supervised(df: pd.DataFrame, steps_ahead: int, min_samples: int) ->
         current_close_test=test_df["close"].to_numpy(dtype=float),
         target_close_val=val_df["target_close"].to_numpy(dtype=float),
         target_close_test=test_df["target_close"].to_numpy(dtype=float),
+        regime_train=np.argmax(train_df[["markov_prob_down", "markov_prob_flat", "markov_prob_up"]].to_numpy(dtype=float), axis=1),
+        regime_val=np.argmax(val_df[["markov_prob_down", "markov_prob_flat", "markov_prob_up"]].to_numpy(dtype=float), axis=1),
+        regime_test=np.argmax(test_df[["markov_prob_down", "markov_prob_flat", "markov_prob_up"]].to_numpy(dtype=float), axis=1),
     )
     return enriched, split
 
 
 def _classification_candidates() -> list[tuple[str, Pipeline]]:
-    return [
+    base: list[tuple[str, Pipeline]] = [
         (
             "logistic_regression",
             Pipeline(
@@ -271,6 +303,44 @@ def _classification_candidates() -> list[tuple[str, Pipeline]]:
                     ("imputer", SimpleImputer(strategy="median")),
                     ("scaler", StandardScaler()),
                     ("model", LogisticRegression(max_iter=1500, class_weight="balanced", random_state=42)),
+                ]
+            ),
+        ),
+        (
+            "random_forest_classifier",
+            Pipeline(
+                steps=[
+                    ("imputer", SimpleImputer(strategy="median")),
+                    (
+                        "model",
+                        RandomForestClassifier(
+                            n_estimators=320,
+                            max_depth=10,
+                            min_samples_leaf=4,
+                            class_weight="balanced_subsample",
+                            random_state=42,
+                            n_jobs=-1,
+                        ),
+                    ),
+                ]
+            ),
+        ),
+        (
+            "extra_trees_classifier",
+            Pipeline(
+                steps=[
+                    ("imputer", SimpleImputer(strategy="median")),
+                    (
+                        "model",
+                        ExtraTreesClassifier(
+                            n_estimators=400,
+                            max_depth=12,
+                            min_samples_leaf=3,
+                            class_weight="balanced_subsample",
+                            random_state=42,
+                            n_jobs=-1,
+                        ),
+                    ),
                 ]
             ),
         ),
@@ -292,10 +362,101 @@ def _classification_candidates() -> list[tuple[str, Pipeline]]:
             ),
         ),
     ]
+    if XGBClassifier is not None:
+        base.append(
+            (
+                "xgboost_classifier",
+                Pipeline(
+                    steps=[
+                        ("imputer", SimpleImputer(strategy="median")),
+                        (
+                            "model",
+                            XGBClassifier(
+                                n_estimators=220,
+                                learning_rate=0.05,
+                                max_depth=5,
+                                subsample=0.9,
+                                colsample_bytree=0.9,
+                                objective="binary:logistic",
+                                eval_metric="logloss",
+                                random_state=42,
+                                n_jobs=1,
+                            ),
+                        ),
+                    ]
+                ),
+            )
+        )
+    if LGBMClassifier is not None:
+        base.append(
+            (
+                "lightgbm_classifier",
+                Pipeline(
+                    steps=[
+                        ("imputer", SimpleImputer(strategy="median")),
+                        (
+                            "model",
+                            LGBMClassifier(
+                                n_estimators=260,
+                                learning_rate=0.04,
+                                max_depth=7,
+                                random_state=42,
+                                n_jobs=1,
+                                verbosity=-1,
+                            ),
+                        ),
+                    ]
+                ),
+            )
+        )
+    if CatBoostClassifier is not None:
+        base.append(
+            (
+                "catboost_classifier",
+                Pipeline(
+                    steps=[
+                        ("imputer", SimpleImputer(strategy="median")),
+                        (
+                            "model",
+                            CatBoostClassifier(
+                                iterations=220,
+                                learning_rate=0.05,
+                                depth=6,
+                                loss_function="Logloss",
+                                verbose=False,
+                                random_seed=42,
+                            ),
+                        ),
+                    ]
+                ),
+            )
+        )
+
+    base_estimators = [
+        ("lr", base[0][1]),
+        ("rf", base[1][1]),
+        ("et", base[2][1]),
+        ("gb", base[3][1]),
+    ]
+    stacking = Pipeline(
+        steps=[
+            (
+                "model",
+                StackingClassifier(
+                    estimators=base_estimators,
+                    final_estimator=LogisticRegression(max_iter=1200, class_weight="balanced", random_state=42),
+                    stack_method="predict_proba",
+                    passthrough=False,
+                    n_jobs=1,
+                ),
+            )
+        ]
+    )
+    return base + [("stacking_classifier", stacking)]
 
 
 def _regression_candidates() -> list[tuple[str, Pipeline]]:
-    return [
+    base: list[tuple[str, Pipeline]] = [
         (
             "random_forest_regressor",
             Pipeline(
@@ -368,16 +529,150 @@ def _regression_candidates() -> list[tuple[str, Pipeline]]:
             ),
         ),
     ]
+    if XGBRegressor is not None:
+        base.append(
+            (
+                "xgboost_regressor",
+                Pipeline(
+                    steps=[
+                        ("imputer", SimpleImputer(strategy="median")),
+                        (
+                            "model",
+                            XGBRegressor(
+                                n_estimators=260,
+                                learning_rate=0.04,
+                                max_depth=6,
+                                subsample=0.9,
+                                colsample_bytree=0.9,
+                                objective="reg:squarederror",
+                                random_state=42,
+                                n_jobs=1,
+                            ),
+                        ),
+                    ]
+                ),
+            )
+        )
+    if LGBMRegressor is not None:
+        base.append(
+            (
+                "lightgbm_regressor",
+                Pipeline(
+                    steps=[
+                        ("imputer", SimpleImputer(strategy="median")),
+                        (
+                            "model",
+                            LGBMRegressor(
+                                n_estimators=320,
+                                learning_rate=0.035,
+                                max_depth=8,
+                                random_state=42,
+                                n_jobs=1,
+                                verbosity=-1,
+                            ),
+                        ),
+                    ]
+                ),
+            )
+        )
+    if CatBoostRegressor is not None:
+        base.append(
+            (
+                "catboost_regressor",
+                Pipeline(
+                    steps=[
+                        ("imputer", SimpleImputer(strategy="median")),
+                        (
+                            "model",
+                            CatBoostRegressor(
+                                iterations=260,
+                                learning_rate=0.04,
+                                depth=7,
+                                loss_function="RMSE",
+                                verbose=False,
+                                random_seed=42,
+                            ),
+                        ),
+                    ]
+                ),
+            )
+        )
+
+    base_estimators = [
+        ("rf", base[0][1]),
+        ("gbr", base[1][1]),
+        ("hgb", base[2][1]),
+        ("etr", base[3][1]),
+    ]
+    stacking = Pipeline(
+        steps=[
+            (
+                "model",
+                StackingRegressor(
+                    estimators=base_estimators,
+                    final_estimator=GradientBoostingRegressor(
+                        n_estimators=180,
+                        learning_rate=0.05,
+                        max_depth=2,
+                        random_state=42,
+                    ),
+                    passthrough=False,
+                    n_jobs=1,
+                ),
+            )
+        ]
+    )
+    return base + [("stacking_regressor", stacking)]
+
+
+def _class_balance_sample_weight(y: pd.Series) -> np.ndarray:
+    values = y.to_numpy(dtype=int)
+    total = len(values)
+    positive = max(int(np.sum(values == 1)), 1)
+    negative = max(int(np.sum(values == 0)), 1)
+    w_pos = total / (2.0 * positive)
+    w_neg = total / (2.0 * negative)
+    return np.where(values == 1, w_pos, w_neg).astype(float)
+
+
+def _fit_pipeline_with_optional_weight(model: Pipeline, x: pd.DataFrame, y: pd.Series, sample_weight: np.ndarray | None) -> None:
+    if sample_weight is None:
+        model.fit(x, y)
+        return
+    last_step = model.steps[-1][0]
+    try:
+        model.fit(x, y, **{f"{last_step}__sample_weight": sample_weight})
+    except (TypeError, ValueError):
+        model.fit(x, y)
+
+
+def _best_threshold_for_f1(y_true: np.ndarray, y_prob: np.ndarray) -> tuple[float, float, float]:
+    best_threshold = 0.5
+    best_f1 = -1.0
+    best_accuracy = -1.0
+    for threshold in np.linspace(0.35, 0.70, 36):
+        y_pred = (y_prob >= threshold).astype(int)
+        score_f1 = float(f1_score(y_true, y_pred, zero_division=0))
+        score_acc = float(accuracy_score(y_true, y_pred))
+        # Optimize primarily for F1 with accuracy tie-break.
+        if score_f1 > best_f1 or (math.isclose(score_f1, best_f1) and score_acc > best_accuracy):
+            best_threshold = float(threshold)
+            best_f1 = score_f1
+            best_accuracy = score_acc
+    return best_threshold, best_f1, best_accuracy
 
 
 def _select_best_classifier(split: SplitData) -> CandidateResult:
     best: CandidateResult | None = None
+    sample_weight = _class_balance_sample_weight(split.y_train_cls)
     for model_name, model in _classification_candidates():
-        model.fit(split.x_train, split.y_train_cls)
-        val_pred = model.predict(split.x_val)
-        score = float(f1_score(split.y_val_cls, val_pred, zero_division=0))
+        _fit_pipeline_with_optional_weight(model, split.x_train, split.y_train_cls, sample_weight)
+        val_prob = model.predict_proba(split.x_val)[:, 1]
+        threshold, score_f1, score_acc = _best_threshold_for_f1(split.y_val_cls.to_numpy(dtype=int), val_prob)
+        # Keep accuracy as tie-breaker in model ranking.
+        score = score_f1 + (score_acc * 0.05)
         if best is None or score > best.val_score:
-            best = CandidateResult(model_name=model_name, model=model, val_score=score)
+            best = CandidateResult(model_name=model_name, model=model, val_score=score, decision_threshold=threshold)
     if best is None:
         raise RuntimeError("No classification candidate available")
     return best
@@ -519,6 +814,92 @@ def _martingale_residual_diagnostic(y_true_reg: np.ndarray, y_pred_reg: np.ndarr
     }
 
 
+def _extract_top_feature_importance(model: Pipeline, feature_names: list[str], top_k: int = 8) -> list[dict[str, float | str]]:
+    try:
+        estimator = model.steps[-1][1]
+        importances = None
+        if hasattr(estimator, "feature_importances_"):
+            importances = np.asarray(estimator.feature_importances_, dtype=float)
+        elif hasattr(estimator, "coef_"):
+            coef = np.asarray(estimator.coef_, dtype=float)
+            importances = np.abs(coef[0] if coef.ndim > 1 else coef)
+        if importances is None or importances.size != len(feature_names):
+            return []
+        pairs = sorted(zip(feature_names, importances), key=lambda item: item[1], reverse=True)[:top_k]
+        return [{"feature": name, "importance": float(value)} for name, value in pairs]
+    except Exception:
+        return []
+
+
+def _near_pass_delta(metrics: dict[str, float], baseline: dict[str, float]) -> dict[str, float]:
+    return {
+        "f1_vs_baseline": float(metrics["f1"] - baseline["f1"]),
+        "accuracy_vs_baseline": float(metrics["accuracy"] - baseline["accuracy"]),
+        "rmse_vs_baseline": float(baseline["rmse"] - metrics["rmse"]),
+    }
+
+
+def _train_regime_models(split: SplitData, horizon: str) -> tuple[dict[str, Pipeline], dict[str, Pipeline]]:
+    cls_models: dict[str, Pipeline] = {}
+    reg_models: dict[str, Pipeline] = {}
+    regime_names = {0: "down", 1: "flat", 2: "up"}
+    for regime_id, regime_name in regime_names.items():
+        idx = np.where(split.regime_train == regime_id)[0]
+        if len(idx) < 120:
+            continue
+        x_sub = split.x_train.iloc[idx]
+        y_cls_sub = split.y_train_cls.iloc[idx]
+        y_reg_sub = split.y_train_reg.iloc[idx]
+        if y_cls_sub.nunique() < 2:
+            continue
+        cls_best = _select_best_classifier(
+            SplitData(
+                feature_columns=split.feature_columns,
+                x_train=x_sub,
+                x_val=split.x_val,
+                x_test=split.x_test,
+                y_train_cls=y_cls_sub,
+                y_val_cls=split.y_val_cls,
+                y_test_cls=split.y_test_cls,
+                y_train_reg=y_reg_sub,
+                y_val_reg=split.y_val_reg,
+                y_test_reg=split.y_test_reg,
+                current_close_val=split.current_close_val,
+                current_close_test=split.current_close_test,
+                target_close_val=split.target_close_val,
+                target_close_test=split.target_close_test,
+                regime_train=split.regime_train,
+                regime_val=split.regime_val,
+                regime_test=split.regime_test,
+            )
+        )
+        reg_best = _select_best_regressor(
+            SplitData(
+                feature_columns=split.feature_columns,
+                x_train=x_sub,
+                x_val=split.x_val,
+                x_test=split.x_test,
+                y_train_cls=y_cls_sub,
+                y_val_cls=split.y_val_cls,
+                y_test_cls=split.y_test_cls,
+                y_train_reg=y_reg_sub,
+                y_val_reg=split.y_val_reg,
+                y_test_reg=split.y_test_reg,
+                current_close_val=split.current_close_val,
+                current_close_test=split.current_close_test,
+                target_close_val=split.target_close_val,
+                target_close_test=split.target_close_test,
+                regime_train=split.regime_train,
+                regime_val=split.regime_val,
+                regime_test=split.regime_test,
+            ),
+            horizon,
+        )
+        cls_models[regime_name] = cls_best.model
+        reg_models[regime_name] = reg_best.model
+    return cls_models, reg_models
+
+
 def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, models_root: Path, write_artifacts: bool = True) -> dict[str, object]:
     min_samples = min_samples_for_horizon(spec.label)
     resolved = resolve_horizon_data(symbol, spec, min_samples=min_samples)
@@ -532,7 +913,7 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         }
 
     granularity, steps, frame = resolved
-    prepared = _prepare_supervised(frame, steps, min_samples=min_samples)
+    prepared = _prepare_supervised(frame, spec.label, steps, min_samples=min_samples)
     if prepared is None:
         return {
             "symbol": symbol,
@@ -548,12 +929,32 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
 
     cls_best = _select_best_classifier(split)
     reg_best = _select_best_regressor(split, spec.label)
+    regime_cls_models, regime_reg_models = _train_regime_models(split, spec.label)
 
-    cls_pred = cls_best.model.predict(split.x_test)
     cls_prob = cls_best.model.predict_proba(split.x_test)[:, 1]
+    cls_pred = (cls_prob >= cls_best.decision_threshold).astype(int)
     reg_pred_log_return = reg_best.model.predict(split.x_test)
     reg_pred_log_return = clip_log_return_predictions(reg_pred_log_return, spec.label)
     reg_pred = split.current_close_test * np.exp(reg_pred_log_return)
+
+    if regime_cls_models or regime_reg_models:
+        blended_prob = cls_prob.copy()
+        blended_reg = reg_pred.copy()
+        regime_names = {0: "down", 1: "flat", 2: "up"}
+        for regime_id, regime_name in regime_names.items():
+            mask = split.regime_test == regime_id
+            if not np.any(mask):
+                continue
+            if regime_name in regime_cls_models:
+                regime_prob = regime_cls_models[regime_name].predict_proba(split.x_test.iloc[mask])[:, 1]
+                blended_prob[mask] = regime_prob
+            if regime_name in regime_reg_models:
+                regime_reg_log = regime_reg_models[regime_name].predict(split.x_test.iloc[mask])
+                regime_reg_log = clip_log_return_predictions(np.asarray(regime_reg_log, dtype=float), spec.label)
+                blended_reg[mask] = split.current_close_test[mask] * np.exp(regime_reg_log)
+        cls_prob = blended_prob
+        cls_pred = (cls_prob >= cls_best.decision_threshold).astype(int)
+        reg_pred = blended_reg
 
     metrics = _metrics(
         y_true_cls=split.y_test_cls,
@@ -596,6 +997,7 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         failed_reasons.append("martingale_residual_autocorrelation_too_high")
 
     calibration = _build_calibration_payload(split.y_test_cls, cls_prob)
+    calibration["decision_threshold"] = float(cls_best.decision_threshold)
 
     symbol_dir = models_root / model_version / symbol
     artifact_paths = {
@@ -603,6 +1005,14 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         "regression": symbol_dir / f"reg_{spec.label}.joblib",
         "calibration": symbol_dir / f"calibration_{spec.label}.json",
         "metrics": symbol_dir / f"metrics_{spec.label}.json",
+    }
+    regime_artifact_paths = {
+        "classification": {
+            name: symbol_dir / f"cls_{spec.label}_regime_{name}.joblib" for name in regime_cls_models
+        },
+        "regression": {
+            name: symbol_dir / f"reg_{spec.label}_regime_{name}.joblib" for name in regime_reg_models
+        },
     }
 
     metrics_payload: dict[str, object] = {
@@ -620,8 +1030,10 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
             "classifier": cls_best.model_name,
             "regressor": reg_best.model_name,
         },
+        "feature_columns": split.feature_columns,
         "metrics": metrics,
         "baseline": baseline,
+        "near_pass_delta": _near_pass_delta(metrics, baseline),
         "martingale_diagnostic": martingale_diag,
         "martingale_enforced": martingale_enforced,
         "regression_target": "log_return",
@@ -631,6 +1043,10 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         "log_return_clip": float(HORIZON_LOG_RETURN_CLIP.get(spec.label, 1.0)),
         "confidence_slice": confidence_slice,
         "regime_breakdown": regime_breakdown,
+        "top_features": {
+            "classifier": _extract_top_feature_importance(cls_best.model, split.feature_columns),
+            "regressor": _extract_top_feature_importance(reg_best.model, split.feature_columns),
+        },
         "promotion_gate": {
             "passed": promotion_pass,
             "failed_reasons": failed_reasons,
@@ -641,12 +1057,20 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
             },
         },
         "artifact_paths": {key: str(path) for key, path in artifact_paths.items()},
+        "regime_artifact_paths": {
+            "classification": {key: str(path) for key, path in regime_artifact_paths["classification"].items()},
+            "regression": {key: str(path) for key, path in regime_artifact_paths["regression"].items()},
+        },
     }
 
     if write_artifacts:
         symbol_dir.mkdir(parents=True, exist_ok=True)
         dump(cls_best.model, artifact_paths["classification"])
         dump(reg_best.model, artifact_paths["regression"])
+        for name, model in regime_cls_models.items():
+            dump(model, regime_artifact_paths["classification"][name])
+        for name, model in regime_reg_models.items():
+            dump(model, regime_artifact_paths["regression"][name])
         artifact_paths["calibration"].write_text(json.dumps(calibration, indent=2), encoding="utf-8")
         artifact_paths["metrics"].write_text(json.dumps(metrics_payload, indent=2), encoding="utf-8")
 

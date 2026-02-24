@@ -10,6 +10,7 @@ Current scope:
 - US-tradable symbol universe validation (`quote=USD`)
 - market-data retrieval + SQLite caching
   Candle ingestion uses Coinbase as primary and Binance (free spot API) as secondary fallback/supplement.
+  Credibility guards are enforced (OHLCV integrity, timestamp consistency, freshness, cross-source divergence checks).
 - background ingestion loop for tradable symbols
 - risk-aware prediction range output
 - model registry + promotion flow
@@ -47,6 +48,7 @@ Background ingestion loop:
 
 - On startup, the service can continuously refresh candles for US-tradable USD symbols.
 - Controlled by `INGESTION_*` env variables in `backend/.env`.
+- Priority symbols from `SUPPORTED_SYMBOLS` are always ingested even when `INGESTION_SYMBOL_LIMIT` is low.
 - Source controls:
   `MARKET_DATA_SOURCE_BASE_URL` (primary, Coinbase),
   `MARKET_DATA_SECONDARY_SOURCE_ENABLED`,
@@ -84,8 +86,10 @@ Training targets horizons:
 Candidate models per symbol+horizon:
 
 - Classification: Logistic Regression (baseline) + Gradient Boosting
-- Regression: Random Forest (baseline) + Gradient Boosting
+- Classification ensemble: Logistic Regression, RandomForest, ExtraTrees, GradientBoosting, StackingClassifier
+- Regression ensemble: RandomForest, GradientBoosting, HistGradientBoosting, ExtraTrees, StackingRegressor
   Regression target is modeled as `log_return` and transformed back to price with horizon-aware clipping to reduce extreme RMSE outliers.
+  Per-horizon feature subsets are used (short-horizon microstructure/volatility burst vs long-horizon trend/regime persistence).
 
 Stochastic feature layer (used by all model candidates):
 
@@ -105,6 +109,7 @@ Training reports additionally include:
 
 - high-confidence slice quality at `HIGH_CONFIDENCE_THRESHOLD`
 - regime breakdown metrics (`down/flat/up`) on the test window
+- near-pass deltas vs baseline and top feature importance lists for targeted retraining
 
 Horizon data readiness uses adaptive minimum sample targets (short horizons require more history than long horizons) so early-stage training can activate qualified pairs sooner while still keeping gate checks strict.
 
@@ -136,6 +141,7 @@ Any symbol+horizon without promoted artifacts automatically stays on fallback in
 Model inference also supports reliability abstention:
 if confidence is below `PREDICTION_CONFIDENCE_MIN_FOR_MODEL` and `PREDICTION_ABSTAIN_TO_FALLBACK=true`,
 the endpoint returns fallback output instead of low-edge model output.
+Inference also uses calibrated per-horizon decision thresholds (not fixed 0.5) and optional regime-routed models when available.
 
 ## Artifact Layout
 
@@ -161,6 +167,7 @@ Reports:
 
 - Target schedule: daily (`RETRAIN_SCHEDULE_CRON`, default `0 2 * * *`)
 - Recommended ingestion depth for training readiness: `INGESTION_LIMIT_PER_SYMBOL=1500`
+- Recommended ingestion depth for training readiness: `INGESTION_LIMIT_PER_SYMBOL=5000`
 - Staged stochastic gate control: `MARTINGALE_GATE_MODE=bootstrap|strict` (default: `bootstrap`)
 - Bootstrap short-horizon promotion set: `BOOTSTRAP_PHASE1_HORIZONS=5m,1h,6h,12h`
 - Labeling and confidence controls:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,6 +26,9 @@ BINANCE_INTERVAL_MAP = {
     "6h": "6h",
     "1d": "1d",
 }
+
+MAX_RECENCY_STEPS = 24
+MAX_MEDIAN_CLOSE_DIVERGENCE = 0.12
 
 
 def _to_binance_symbol(symbol: str) -> str:
@@ -252,6 +256,78 @@ def _merge_candle_sets(primary: list[CandlePoint], secondary: list[CandlePoint],
     return candles[-limit:]
 
 
+def _is_candle_ohlcv_valid(candle: CandlePoint) -> bool:
+    values = [candle.open, candle.high, candle.low, candle.close, candle.volume]
+    if any((not math.isfinite(value)) for value in values):
+        return False
+    if candle.open <= 0 or candle.high <= 0 or candle.low <= 0 or candle.close <= 0:
+        return False
+    if candle.volume < 0:
+        return False
+    if candle.low > candle.high:
+        return False
+    if candle.open < candle.low or candle.open > candle.high:
+        return False
+    if candle.close < candle.low or candle.close > candle.high:
+        return False
+    return True
+
+
+def _is_series_fresh(candles: list[CandlePoint], granularity: str) -> bool:
+    if not candles:
+        return False
+    now_ts = int(datetime.now(tz=UTC).timestamp())
+    step = GRANULARITY_TO_SECONDS[granularity]
+    latest = candles[-1].start_time
+    return (now_ts - latest) <= (step * MAX_RECENCY_STEPS)
+
+
+def _passes_interval_consistency(candles: list[CandlePoint], granularity: str) -> bool:
+    if len(candles) < 2:
+        return True
+    step = GRANULARITY_TO_SECONDS[granularity]
+    prev = candles[0].start_time
+    for candle in candles[1:]:
+        current = candle.start_time
+        if current <= prev:
+            return False
+        # allow occasional holes, but disallow pathological jumps / off-grid timestamps
+        if ((current - prev) % step) != 0:
+            return False
+        prev = current
+    return True
+
+
+def _is_source_credible(candles: list[CandlePoint], granularity: str) -> bool:
+    if not candles:
+        return False
+    if not _is_series_fresh(candles, granularity):
+        return False
+    if not _passes_interval_consistency(candles, granularity):
+        return False
+    if not all(_is_candle_ohlcv_valid(item) for item in candles):
+        return False
+    return True
+
+
+def _median_close_divergence(primary: list[CandlePoint], secondary: list[CandlePoint]) -> float | None:
+    secondary_by_ts = {item.start_time: item for item in secondary}
+    ratios: list[float] = []
+    for item in primary:
+        other = secondary_by_ts.get(item.start_time)
+        if other is None:
+            continue
+        denom = max(abs(item.close), 1e-9)
+        ratios.append(abs(item.close - other.close) / denom)
+    if not ratios:
+        return None
+    ratios.sort()
+    mid = len(ratios) // 2
+    if len(ratios) % 2 == 1:
+        return ratios[mid]
+    return 0.5 * (ratios[mid - 1] + ratios[mid])
+
+
 async def get_candles(symbol: str, granularity: str, limit: int, refresh: bool = False) -> tuple[str, list[CandlePoint]]:
     normalized_symbol = symbol.upper().strip()
     if granularity not in GRANULARITY_TO_SECONDS:
@@ -281,9 +357,17 @@ async def get_candles(symbol: str, granularity: str, limit: int, refresh: bool =
         except Exception:
             secondary = []
 
+    primary_ok = primary_ok and _is_source_credible(primary, granularity)
+    secondary_ok = secondary_ok and _is_source_credible(secondary, granularity)
+
     if primary_ok and secondary_ok:
-        merged = _merge_candle_sets(primary=primary, secondary=secondary, limit=limit)
-        source = "coinbase_binance_merged"
+        divergence = _median_close_divergence(primary, secondary)
+        if divergence is not None and divergence > MAX_MEDIAN_CLOSE_DIVERGENCE:
+            merged = primary
+            source = "coinbase_exchange_divergence_guard"
+        else:
+            merged = _merge_candle_sets(primary=primary, secondary=secondary, limit=limit)
+            source = "coinbase_binance_merged"
     elif primary_ok:
         merged = primary
         source = "coinbase_exchange"

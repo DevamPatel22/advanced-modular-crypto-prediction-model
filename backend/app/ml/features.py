@@ -9,18 +9,82 @@ FEATURE_VERSION = "v2"
 
 FEATURE_COLUMNS = [
     "ret_1",
+    "ret_2",
     "ret_5",
     "ret_15",
+    "ret_60",
     "log_ret_1",
     "ma_10_ratio",
     "ma_30_ratio",
+    "ma_90_ratio",
     "ema_12_ratio",
     "ema_26_ratio",
+    "ema_8_ratio",
+    "ema_21_ratio",
     "volatility_20",
+    "volatility_5",
+    "volatility_60",
+    "volume_z_20",
+    "volume_z_5",
+    "rsi_14",
+    "range_ratio",
+    "hl_spread",
+    "body_ratio",
+    "close_position",
+    "trend_slope_30",
+    "mu_20",
+    "sigma_20",
+    "gbm_expected_ret_1",
+    "gbm_var_1",
+    "shock_z_20",
+    "markov_prob_down",
+    "markov_prob_flat",
+    "markov_prob_up",
+]
+
+SHORT_HORIZONS = {"5m", "1h", "6h", "12h"}
+LONG_HORIZONS = {"1d", "1w", "1mo", "3mo"}
+
+SHORT_FEATURE_COLUMNS = [
+    "ret_1",
+    "ret_2",
+    "ret_5",
+    "ret_15",
+    "log_ret_1",
+    "ema_8_ratio",
+    "ema_12_ratio",
+    "ema_21_ratio",
+    "volatility_5",
+    "volatility_20",
+    "volume_z_5",
     "volume_z_20",
     "rsi_14",
     "range_ratio",
     "hl_spread",
+    "body_ratio",
+    "close_position",
+    "shock_z_20",
+    "markov_prob_down",
+    "markov_prob_flat",
+    "markov_prob_up",
+]
+
+LONG_FEATURE_COLUMNS = [
+    "ret_1",
+    "ret_5",
+    "ret_15",
+    "ret_60",
+    "log_ret_1",
+    "ma_10_ratio",
+    "ma_30_ratio",
+    "ma_90_ratio",
+    "ema_12_ratio",
+    "ema_26_ratio",
+    "volatility_20",
+    "volatility_60",
+    "volume_z_20",
+    "rsi_14",
+    "trend_slope_30",
     "mu_20",
     "sigma_20",
     "gbm_expected_ret_1",
@@ -105,21 +169,31 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # Technical/momentum/volatility/volume feature set.
     frame["ret_1"] = frame["close"].pct_change(1)
+    frame["ret_2"] = frame["close"].pct_change(2)
     frame["ret_5"] = frame["close"].pct_change(5)
     frame["ret_15"] = frame["close"].pct_change(15)
+    frame["ret_60"] = frame["close"].pct_change(60)
     frame["log_ret_1"] = np.log(frame["close"]).diff(1)
 
     frame["ma_10"] = frame["close"].rolling(10).mean()
     frame["ma_30"] = frame["close"].rolling(30).mean()
+    frame["ma_90"] = frame["close"].rolling(90).mean()
+    frame["ema_8"] = frame["close"].ewm(span=8, adjust=False).mean()
     frame["ema_12"] = frame["close"].ewm(span=12, adjust=False).mean()
+    frame["ema_21"] = frame["close"].ewm(span=21, adjust=False).mean()
     frame["ema_26"] = frame["close"].ewm(span=26, adjust=False).mean()
 
     frame["ma_10_ratio"] = frame["close"] / frame["ma_10"] - 1
     frame["ma_30_ratio"] = frame["close"] / frame["ma_30"] - 1
+    frame["ma_90_ratio"] = frame["close"] / frame["ma_90"] - 1
+    frame["ema_8_ratio"] = frame["close"] / frame["ema_8"] - 1
     frame["ema_12_ratio"] = frame["close"] / frame["ema_12"] - 1
+    frame["ema_21_ratio"] = frame["close"] / frame["ema_21"] - 1
     frame["ema_26_ratio"] = frame["close"] / frame["ema_26"] - 1
 
+    frame["volatility_5"] = frame["log_ret_1"].rolling(5).std()
     frame["volatility_20"] = frame["log_ret_1"].rolling(20).std()
+    frame["volatility_60"] = frame["log_ret_1"].rolling(60).std()
     frame["mu_20"] = frame["log_ret_1"].rolling(20).mean()
     frame["sigma_20"] = frame["log_ret_1"].rolling(20).std()
     frame["gbm_expected_ret_1"] = np.exp(frame["mu_20"] + 0.5 * np.square(frame["sigma_20"])) - 1
@@ -130,10 +204,16 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
     rolling_volume_mean = frame["volume"].rolling(20).mean()
     rolling_volume_std = frame["volume"].rolling(20).std()
+    rolling_volume_mean_5 = frame["volume"].rolling(5).mean()
+    rolling_volume_std_5 = frame["volume"].rolling(5).std()
+    frame["volume_z_5"] = (frame["volume"] - rolling_volume_mean_5) / (rolling_volume_std_5 + 1e-12)
     frame["volume_z_20"] = (frame["volume"] - rolling_volume_mean) / (rolling_volume_std + 1e-12)
     frame["rsi_14"] = _rsi(frame["close"], 14)
     frame["hl_spread"] = (frame["high"] - frame["low"]) / (frame["close"] + 1e-12)
     frame["range_ratio"] = (frame["close"] - frame["low"]) / ((frame["high"] - frame["low"]) + 1e-12)
+    frame["body_ratio"] = (frame["close"] - frame["open"]) / (frame["open"] + 1e-12)
+    frame["close_position"] = (frame["close"] - frame["low"]) / ((frame["high"] - frame["low"]) + 1e-12)
+    frame["trend_slope_30"] = frame["close"].diff(30) / (frame["close"].shift(30) + 1e-12)
     states = _encode_state(frame["ret_1"])
     frame = frame.join(_markov_transition_features(states))
 
@@ -145,3 +225,11 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
             frame[column] = frame[column].astype(float)
 
     return frame
+
+
+def feature_columns_for_horizon(horizon: str) -> list[str]:
+    if horizon in SHORT_HORIZONS:
+        return SHORT_FEATURE_COLUMNS
+    if horizon in LONG_HORIZONS:
+        return LONG_FEATURE_COLUMNS
+    return FEATURE_COLUMNS
