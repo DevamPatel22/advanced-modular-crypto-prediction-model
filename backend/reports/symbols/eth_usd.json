@@ -1,121 +1,129 @@
 {
   "symbol": "ETH-USD",
-  "model_version": "daily-20260219-050827",
+  "model_version": "daily-20260224-152820",
   "horizons": {
     "5m": {
-      "generated_at": "2026-02-19T05:10:55.376277+00:00",
+      "generated_at": "2026-02-24T15:43:50.229201+00:00",
       "symbol": "ETH-USD",
       "horizon": "5m",
       "status": "ok",
-      "model_version": "daily-20260219-050827",
+      "model_version": "daily-20260224-152820",
       "feature_version": "v2",
       "granularity": "1m",
       "steps_ahead": 5,
-      "rows_total": 2151,
-      "rows_test": 323,
+      "rows_total": 6896,
+      "rows_test": 1035,
       "selected_models": {
-        "classifier": "logistic_regression",
-        "regressor": "random_forest_regressor"
+        "classifier": "stacking_classifier",
+        "regressor": "extra_trees_regressor"
       },
+      "feature_columns": [
+        "ret_1",
+        "ret_2",
+        "ret_5",
+        "ret_15",
+        "log_ret_1",
+        "ema_8_ratio",
+        "ema_12_ratio",
+        "ema_21_ratio",
+        "volatility_5",
+        "volatility_20",
+        "volume_z_5",
+        "volume_z_20",
+        "rsi_14",
+        "range_ratio",
+        "hl_spread",
+        "body_ratio",
+        "close_position",
+        "shock_z_20",
+        "markov_prob_down",
+        "markov_prob_flat",
+        "markov_prob_up"
+      ],
       "metrics": {
-        "accuracy": 0.5882352941176471,
-        "precision": 0.5722543352601156,
-        "recall": 0.6265822784810127,
-        "f1": 0.5981873111782477,
-        "roc_auc": 0.604065976217875,
-        "mae": 2.6244940445221094,
-        "rmse": 3.7478420831285173,
-        "mape": 0.0013358254621225363
+        "accuracy": 0.45603864734299515,
+        "precision": 0.45579567779960706,
+        "recall": 0.9809725158562368,
+        "f1": 0.6224010731052985,
+        "roc_auc": 0.4907533499356722,
+        "mae": 3.3162361243349046,
+        "rmse": 4.817424022361042,
+        "mape": 0.0017874607246502296
       },
       "baseline": {
-        "accuracy": 0.4891640866873065,
-        "f1": 0.656964656964657,
-        "rmse": 3.509886302657836,
-        "mae": 2.470990712074303,
-        "mape": 0.0012574651851400612
+        "accuracy": 0.4570048309178744,
+        "f1": 0.6273209549071618,
+        "rmse": 4.72827103247284,
+        "mae": 3.245072463768117,
+        "mape": 0.001749638466239863
+      },
+      "near_pass_delta": {
+        "f1_vs_baseline": -0.004919881801863313,
+        "accuracy_vs_baseline": -0.0009661835748792647,
+        "rmse_vs_baseline": -0.08915298988820197
       },
       "martingale_diagnostic": {
-        "acf1": 0.7434076178765622,
-        "variance": 13.806471174456382,
+        "acf1": 0.7740167343880676,
+        "variance": 23.134102806866785,
         "pass": false
       },
       "martingale_enforced": false,
       "regression_target": "log_return",
       "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+      "classification_label_mode": "triple_barrier",
+      "triple_barrier_sigma_mult": 1.0,
       "log_return_clip": 0.08,
-      "promotion_gate": {
-        "passed": false,
-        "failed_reasons": [
-          "classification_f1_not_above_baseline",
-          "regression_rmse_not_below_baseline"
-        ],
-        "rules": {
-          "classification": [
-            "f1 > baseline.f1",
-            "accuracy > baseline.accuracy"
-          ],
-          "regression": [
-            "rmse < baseline.rmse"
-          ],
-          "stochastic": [
-            "abs(residual_acf1) <= 0.10 (strict mode only)"
-          ]
+      "confidence_slice": {
+        "threshold": 0.62,
+        "coverage": 0.0,
+        "selected_samples": 0.0,
+        "precision": NaN,
+        "accuracy": NaN
+      },
+      "regime_breakdown": {
+        "flat": {
+          "count": 1035.0,
+          "accuracy": 0.45603864734299515,
+          "f1": 0.6224010731052985
         }
       },
-      "artifact_paths": {
-        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/cls_5m.joblib",
-        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/reg_5m.joblib",
-        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/calibration_5m.json",
-        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/metrics_5m.json"
+      "top_features": {
+        "classifier": [],
+        "regressor": [
+          {
+            "feature": "markov_prob_down",
+            "importance": 0.12647854472866127
+          },
+          {
+            "feature": "volatility_20",
+            "importance": 0.09140238839607236
+          },
+          {
+            "feature": "markov_prob_up",
+            "importance": 0.0902257551671453
+          },
+          {
+            "feature": "markov_prob_flat",
+            "importance": 0.079853262389819
+          },
+          {
+            "feature": "volatility_5",
+            "importance": 0.0546463827115471
+          },
+          {
+            "feature": "ret_15",
+            "importance": 0.05021910532898085
+          },
+          {
+            "feature": "rsi_14",
+            "importance": 0.0497847145263409
+          },
+          {
+            "feature": "ret_5",
+            "importance": 0.0485291808852963
+          }
+        ]
       },
-      "calibration": {
-        "method": "linear_scale",
-        "scale": 1.0947128488897906,
-        "min_confidence": 0.5,
-        "max_confidence": 0.99
-      }
-    },
-    "1h": {
-      "generated_at": "2026-02-19T05:10:56.442650+00:00",
-      "symbol": "ETH-USD",
-      "horizon": "1h",
-      "status": "ok",
-      "model_version": "daily-20260219-050827",
-      "feature_version": "v2",
-      "granularity": "1h",
-      "steps_ahead": 1,
-      "rows_total": 319,
-      "rows_test": 48,
-      "selected_models": {
-        "classifier": "gradient_boosting_classifier",
-        "regressor": "random_forest_regressor"
-      },
-      "metrics": {
-        "accuracy": 0.4791666666666667,
-        "precision": 0.5172413793103449,
-        "recall": 0.5769230769230769,
-        "f1": 0.5454545454545454,
-        "roc_auc": 0.43881118881118886,
-        "mae": 10.48546036875257,
-        "rmse": 14.832806328945264,
-        "mape": 0.005307754652763894
-      },
-      "baseline": {
-        "accuracy": 0.5416666666666666,
-        "f1": 0.7027027027027027,
-        "rmse": 12.055117516363463,
-        "mae": 8.579583333333337,
-        "mape": 0.0043418263791392625
-      },
-      "martingale_diagnostic": {
-        "acf1": -0.34231765927929253,
-        "variance": 217.31668049070277,
-        "pass": false
-      },
-      "martingale_enforced": false,
-      "regression_target": "log_return",
-      "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
-      "log_return_clip": 0.18,
       "promotion_gate": {
         "passed": false,
         "failed_reasons": [
@@ -137,63 +145,187 @@
         }
       },
       "artifact_paths": {
-        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/cls_1h.joblib",
-        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/reg_1h.joblib",
-        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/calibration_1h.json",
-        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/metrics_1h.json"
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_5m.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_5m.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/calibration_5m.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/metrics_5m.json"
+      },
+      "regime_artifact_paths": {
+        "classification": {
+          "flat": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_5m_regime_flat.joblib"
+        },
+        "regression": {
+          "flat": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_5m_regime_flat.joblib"
+        }
       },
       "calibration": {
         "method": "linear_scale",
-        "scale": 0.7,
+        "scale": 0.9593677759347674,
         "min_confidence": 0.5,
-        "max_confidence": 0.99
+        "max_confidence": 0.99,
+        "decision_threshold": 0.48
       }
     },
-    "6h": {
-      "generated_at": "2026-02-19T05:10:57.519263+00:00",
+    "1h": {
+      "generated_at": "2026-02-24T15:44:25.669919+00:00",
       "symbol": "ETH-USD",
-      "horizon": "6h",
+      "horizon": "1h",
       "status": "ok",
-      "model_version": "daily-20260219-050827",
+      "model_version": "daily-20260224-152820",
       "feature_version": "v2",
       "granularity": "1h",
-      "steps_ahead": 6,
-      "rows_total": 314,
-      "rows_test": 48,
+      "steps_ahead": 1,
+      "rows_total": 795,
+      "rows_test": 120,
       "selected_models": {
         "classifier": "logistic_regression",
         "regressor": "random_forest_regressor"
       },
+      "feature_columns": [
+        "ret_1",
+        "ret_2",
+        "ret_5",
+        "ret_15",
+        "log_ret_1",
+        "ema_8_ratio",
+        "ema_12_ratio",
+        "ema_21_ratio",
+        "volatility_5",
+        "volatility_20",
+        "volume_z_5",
+        "volume_z_20",
+        "rsi_14",
+        "range_ratio",
+        "hl_spread",
+        "body_ratio",
+        "close_position",
+        "shock_z_20",
+        "markov_prob_down",
+        "markov_prob_flat",
+        "markov_prob_up"
+      ],
       "metrics": {
-        "accuracy": 0.4791666666666667,
-        "precision": 0.42424242424242425,
-        "recall": 0.7,
-        "f1": 0.5283018867924528,
-        "roc_auc": 0.567857142857143,
-        "mae": 21.996385861977256,
-        "rmse": 25.45997769457924,
-        "mape": 0.011148840412734532
+        "accuracy": 0.4666666666666667,
+        "precision": 0.46956521739130436,
+        "recall": 0.9473684210526315,
+        "f1": 0.627906976744186,
+        "roc_auc": 0.5201893622946254,
+        "mae": 7.817447946989686,
+        "rmse": 11.736809668126115,
+        "mape": 0.004085005237591509
       },
       "baseline": {
-        "accuracy": 0.4166666666666667,
-        "f1": 0.5882352941176471,
-        "rmse": 24.016159360244636,
-        "mae": 20.396874999999994,
-        "mape": 0.010324151531852847
+        "accuracy": 0.475,
+        "f1": 0.6440677966101694,
+        "rmse": 11.056680748157046,
+        "mae": 6.796916666666673,
+        "mape": 0.0035507489339593715
+      },
+      "near_pass_delta": {
+        "f1_vs_baseline": -0.01616081986598339,
+        "accuracy_vs_baseline": -0.008333333333333304,
+        "rmse_vs_baseline": -0.6801289199690697
       },
       "martingale_diagnostic": {
-        "acf1": 0.5663658581532468,
-        "variance": 543.6782021953568,
-        "pass": false
+        "acf1": 0.05612086422167386,
+        "variance": 137.55731175799065,
+        "pass": true
       },
       "martingale_enforced": false,
       "regression_target": "log_return",
       "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
-      "log_return_clip": 0.35,
+      "classification_label_mode": "triple_barrier",
+      "triple_barrier_sigma_mult": 1.0,
+      "log_return_clip": 0.18,
+      "confidence_slice": {
+        "threshold": 0.62,
+        "coverage": 0.0,
+        "selected_samples": 0.0,
+        "precision": NaN,
+        "accuracy": NaN
+      },
+      "regime_breakdown": {
+        "down": {
+          "count": 120.0,
+          "accuracy": 0.4666666666666667,
+          "f1": 0.627906976744186
+        }
+      },
+      "top_features": {
+        "classifier": [
+          {
+            "feature": "ema_21_ratio",
+            "importance": 0.4414180989897059
+          },
+          {
+            "feature": "ema_8_ratio",
+            "importance": 0.3631983660104243
+          },
+          {
+            "feature": "ema_12_ratio",
+            "importance": 0.20381512154262502
+          },
+          {
+            "feature": "ret_2",
+            "importance": 0.20121273112595411
+          },
+          {
+            "feature": "volume_z_20",
+            "importance": 0.16617420812755807
+          },
+          {
+            "feature": "ret_15",
+            "importance": 0.15548137038647808
+          },
+          {
+            "feature": "log_ret_1",
+            "importance": 0.11383241107038498
+          },
+          {
+            "feature": "hl_spread",
+            "importance": 0.10657026260814015
+          }
+        ],
+        "regressor": [
+          {
+            "feature": "hl_spread",
+            "importance": 0.107567416356479
+          },
+          {
+            "feature": "volatility_5",
+            "importance": 0.08909638464029972
+          },
+          {
+            "feature": "volume_z_20",
+            "importance": 0.07007620426262604
+          },
+          {
+            "feature": "ret_2",
+            "importance": 0.06924227925041868
+          },
+          {
+            "feature": "ret_5",
+            "importance": 0.06568265600804503
+          },
+          {
+            "feature": "ret_15",
+            "importance": 0.06544091152977412
+          },
+          {
+            "feature": "volatility_20",
+            "importance": 0.06517242477435074
+          },
+          {
+            "feature": "markov_prob_up",
+            "importance": 0.05637828485688387
+          }
+        ]
+      },
       "promotion_gate": {
         "passed": false,
         "failed_reasons": [
           "classification_f1_not_above_baseline",
+          "classification_accuracy_not_above_baseline",
           "regression_rmse_not_below_baseline"
         ],
         "rules": {
@@ -210,133 +342,322 @@
         }
       },
       "artifact_paths": {
-        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/cls_6h.joblib",
-        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/reg_6h.joblib",
-        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/calibration_6h.json",
-        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/metrics_6h.json"
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_1h.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_1h.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/calibration_1h.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/metrics_1h.json"
+      },
+      "regime_artifact_paths": {
+        "classification": {
+          "down": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_1h_regime_down.joblib",
+          "up": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_1h_regime_up.joblib"
+        },
+        "regression": {
+          "down": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_1h_regime_down.joblib",
+          "up": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_1h_regime_up.joblib"
+        }
       },
       "calibration": {
         "method": "linear_scale",
-        "scale": 0.7888089812239142,
+        "scale": 1.0803024389951033,
         "min_confidence": 0.5,
-        "max_confidence": 0.99
+        "max_confidence": 0.99,
+        "decision_threshold": 0.45999999999999996
+      }
+    },
+    "6h": {
+      "generated_at": "2026-02-24T15:45:10.274933+00:00",
+      "symbol": "ETH-USD",
+      "horizon": "6h",
+      "status": "ok",
+      "model_version": "daily-20260224-152820",
+      "feature_version": "v2",
+      "granularity": "1h",
+      "steps_ahead": 6,
+      "rows_total": 790,
+      "rows_test": 119,
+      "selected_models": {
+        "classifier": "extra_trees_classifier",
+        "regressor": "stacking_regressor"
+      },
+      "feature_columns": [
+        "ret_1",
+        "ret_2",
+        "ret_5",
+        "ret_15",
+        "log_ret_1",
+        "ema_8_ratio",
+        "ema_12_ratio",
+        "ema_21_ratio",
+        "volatility_5",
+        "volatility_20",
+        "volume_z_5",
+        "volume_z_20",
+        "rsi_14",
+        "range_ratio",
+        "hl_spread",
+        "body_ratio",
+        "close_position",
+        "shock_z_20",
+        "markov_prob_down",
+        "markov_prob_flat",
+        "markov_prob_up"
+      ],
+      "metrics": {
+        "accuracy": 0.4369747899159664,
+        "precision": 0.44680851063829785,
+        "recall": 0.7368421052631579,
+        "f1": 0.5562913907284768,
+        "roc_auc": 0.3950198075834747,
+        "mae": 21.107152045519438,
+        "rmse": 28.68648503426682,
+        "mape": 0.01104334352171058
+      },
+      "baseline": {
+        "accuracy": 0.4789915966386555,
+        "f1": 0.6477272727272727,
+        "rmse": 28.314584284309696,
+        "mae": 19.996218487394952,
+        "mape": 0.010500087836598742
+      },
+      "near_pass_delta": {
+        "f1_vs_baseline": -0.09143588199879593,
+        "accuracy_vs_baseline": -0.04201680672268909,
+        "rmse_vs_baseline": -0.3719007499571241
+      },
+      "martingale_diagnostic": {
+        "acf1": 0.7387168549038494,
+        "variance": 822.2828288138326,
+        "pass": false
+      },
+      "martingale_enforced": false,
+      "regression_target": "log_return",
+      "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+      "classification_label_mode": "triple_barrier",
+      "triple_barrier_sigma_mult": 1.0,
+      "log_return_clip": 0.35,
+      "confidence_slice": {
+        "threshold": 0.62,
+        "coverage": 0.17647058823529413,
+        "selected_samples": 21.0,
+        "precision": 0.3333333333333333,
+        "accuracy": 0.3333333333333333
+      },
+      "regime_breakdown": {
+        "down": {
+          "count": 119.0,
+          "accuracy": 0.4369747899159664,
+          "f1": 0.5562913907284768
+        }
+      },
+      "top_features": {
+        "classifier": [
+          {
+            "feature": "markov_prob_flat",
+            "importance": 0.06518237676061082
+          },
+          {
+            "feature": "rsi_14",
+            "importance": 0.062410132645574545
+          },
+          {
+            "feature": "markov_prob_down",
+            "importance": 0.06022884390416434
+          },
+          {
+            "feature": "volatility_20",
+            "importance": 0.059289880091841336
+          },
+          {
+            "feature": "markov_prob_up",
+            "importance": 0.05611742631324033
+          },
+          {
+            "feature": "volume_z_5",
+            "importance": 0.05538753302153696
+          },
+          {
+            "feature": "volatility_5",
+            "importance": 0.04961214773471596
+          },
+          {
+            "feature": "volume_z_20",
+            "importance": 0.049504428850826496
+          }
+        ],
+        "regressor": []
+      },
+      "promotion_gate": {
+        "passed": false,
+        "failed_reasons": [
+          "classification_f1_not_above_baseline",
+          "classification_accuracy_not_above_baseline",
+          "regression_rmse_not_below_baseline"
+        ],
+        "rules": {
+          "classification": [
+            "f1 > baseline.f1",
+            "accuracy > baseline.accuracy"
+          ],
+          "regression": [
+            "rmse < baseline.rmse"
+          ],
+          "stochastic": [
+            "abs(residual_acf1) <= 0.10 (strict mode only)"
+          ]
+        }
+      },
+      "artifact_paths": {
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_6h.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_6h.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/calibration_6h.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/metrics_6h.json"
+      },
+      "regime_artifact_paths": {
+        "classification": {
+          "down": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_6h_regime_down.joblib",
+          "up": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_6h_regime_up.joblib"
+        },
+        "regression": {
+          "down": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_6h_regime_down.joblib",
+          "up": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_6h_regime_up.joblib"
+        }
+      },
+      "calibration": {
+        "method": "linear_scale",
+        "scale": 0.7190084828935183,
+        "min_confidence": 0.5,
+        "max_confidence": 0.99,
+        "decision_threshold": 0.43999999999999995
       }
     },
     "12h": {
-      "generated_at": "2026-02-19T05:10:58.545532+00:00",
+      "generated_at": "2026-02-24T15:45:45.852172+00:00",
       "symbol": "ETH-USD",
       "horizon": "12h",
       "status": "ok",
-      "model_version": "daily-20260219-050827",
+      "model_version": "daily-20260224-152820",
       "feature_version": "v2",
       "granularity": "1h",
       "steps_ahead": 12,
-      "rows_total": 308,
-      "rows_test": 47,
+      "rows_total": 784,
+      "rows_test": 118,
       "selected_models": {
-        "classifier": "gradient_boosting_classifier",
-        "regressor": "extra_trees_regressor"
+        "classifier": "extra_trees_classifier",
+        "regressor": "stacking_regressor"
       },
+      "feature_columns": [
+        "ret_1",
+        "ret_2",
+        "ret_5",
+        "ret_15",
+        "log_ret_1",
+        "ema_8_ratio",
+        "ema_12_ratio",
+        "ema_21_ratio",
+        "volatility_5",
+        "volatility_20",
+        "volume_z_5",
+        "volume_z_20",
+        "rsi_14",
+        "range_ratio",
+        "hl_spread",
+        "body_ratio",
+        "close_position",
+        "shock_z_20",
+        "markov_prob_down",
+        "markov_prob_flat",
+        "markov_prob_up"
+      ],
       "metrics": {
-        "accuracy": 0.6808510638297872,
-        "precision": 0.5454545454545454,
-        "recall": 1.0,
-        "f1": 0.7058823529411765,
-        "roc_auc": 0.7490421455938697,
-        "mae": 19.690483051697253,
-        "rmse": 24.89300498551538,
-        "mape": 0.010002117233864176
+        "accuracy": 0.4067796610169492,
+        "precision": 0.39705882352941174,
+        "recall": 0.48214285714285715,
+        "f1": 0.43548387096774194,
+        "roc_auc": 0.39602534562211983,
+        "mae": 28.567974986203737,
+        "rmse": 36.241696889069765,
+        "mape": 0.01493023574431746
       },
       "baseline": {
-        "accuracy": 0.3829787234042553,
-        "f1": 0.5538461538461539,
-        "rmse": 29.452908247833818,
-        "mae": 22.628085106382958,
-        "mape": 0.011495030355602443
+        "accuracy": 0.4745762711864407,
+        "f1": 0.6436781609195402,
+        "rmse": 33.77109094918766,
+        "mae": 26.06652542372881,
+        "mape": 0.013714597196422838
+      },
+      "near_pass_delta": {
+        "f1_vs_baseline": -0.20819428995179828,
+        "accuracy_vs_baseline": -0.06779661016949151,
+        "rmse_vs_baseline": -2.4706059398821054
       },
       "martingale_diagnostic": {
-        "acf1": 0.4451892292709994,
-        "variance": 521.4127496860641,
+        "acf1": 0.7821710887451478,
+        "variance": 1310.213954427029,
         "pass": false
       },
       "martingale_enforced": false,
       "regression_target": "log_return",
       "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+      "classification_label_mode": "triple_barrier",
+      "triple_barrier_sigma_mult": 1.0,
       "log_return_clip": 0.5,
-      "promotion_gate": {
-        "passed": true,
-        "failed_reasons": [],
-        "rules": {
-          "classification": [
-            "f1 > baseline.f1",
-            "accuracy > baseline.accuracy"
-          ],
-          "regression": [
-            "rmse < baseline.rmse"
-          ],
-          "stochastic": [
-            "abs(residual_acf1) <= 0.10 (strict mode only)"
-          ]
+      "confidence_slice": {
+        "threshold": 0.62,
+        "coverage": 0.2711864406779661,
+        "selected_samples": 32.0,
+        "precision": 0.5,
+        "accuracy": 0.40625
+      },
+      "regime_breakdown": {
+        "down": {
+          "count": 118.0,
+          "accuracy": 0.4067796610169492,
+          "f1": 0.43548387096774194
         }
       },
-      "artifact_paths": {
-        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/cls_12h.joblib",
-        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/reg_12h.joblib",
-        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/calibration_12h.json",
-        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/metrics_12h.json"
+      "top_features": {
+        "classifier": [
+          {
+            "feature": "markov_prob_flat",
+            "importance": 0.06307368188272074
+          },
+          {
+            "feature": "markov_prob_down",
+            "importance": 0.06000439441870624
+          },
+          {
+            "feature": "rsi_14",
+            "importance": 0.05679817777440422
+          },
+          {
+            "feature": "volatility_20",
+            "importance": 0.056694785892100426
+          },
+          {
+            "feature": "volume_z_5",
+            "importance": 0.056655215640892764
+          },
+          {
+            "feature": "markov_prob_up",
+            "importance": 0.05633087270007021
+          },
+          {
+            "feature": "volume_z_20",
+            "importance": 0.05366588539695729
+          },
+          {
+            "feature": "volatility_5",
+            "importance": 0.052155400873276754
+          }
+        ],
+        "regressor": []
       },
-      "calibration": {
-        "method": "linear_scale",
-        "scale": 0.8546430146156442,
-        "min_confidence": 0.5,
-        "max_confidence": 0.99
-      }
-    },
-    "1d": {
-      "generated_at": "2026-02-19T05:10:59.623706+00:00",
-      "symbol": "ETH-USD",
-      "horizon": "1d",
-      "status": "ok",
-      "model_version": "daily-20260219-050827",
-      "feature_version": "v2",
-      "granularity": "1h",
-      "steps_ahead": 24,
-      "rows_total": 296,
-      "rows_test": 45,
-      "selected_models": {
-        "classifier": "gradient_boosting_classifier",
-        "regressor": "random_forest_regressor"
-      },
-      "metrics": {
-        "accuracy": 0.5555555555555556,
-        "precision": 0.5161290322580645,
-        "recall": 0.7619047619047619,
-        "f1": 0.6153846153846154,
-        "roc_auc": 0.5932539682539683,
-        "mae": 26.544788614901872,
-        "rmse": 33.59869230474763,
-        "mape": 0.013491017143190594
-      },
-      "baseline": {
-        "accuracy": 0.4666666666666667,
-        "f1": 0.6363636363636364,
-        "rmse": 26.875103638043054,
-        "mae": 22.416888888888877,
-        "mape": 0.011365547424931295
-      },
-      "martingale_diagnostic": {
-        "acf1": 0.5480090727654674,
-        "variance": 727.2502768355088,
-        "pass": false
-      },
-      "martingale_enforced": false,
-      "regression_target": "log_return",
-      "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
-      "log_return_clip": 0.75,
       "promotion_gate": {
         "passed": false,
         "failed_reasons": [
           "classification_f1_not_above_baseline",
+          "classification_accuracy_not_above_baseline",
           "regression_rmse_not_below_baseline"
         ],
         "rules": {
@@ -353,43 +674,816 @@
         }
       },
       "artifact_paths": {
-        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/cls_1d.joblib",
-        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/reg_1d.joblib",
-        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/calibration_1d.json",
-        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260219-050827/ETH-USD/metrics_1d.json"
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_12h.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_12h.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/calibration_12h.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/metrics_12h.json"
+      },
+      "regime_artifact_paths": {
+        "classification": {
+          "down": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_12h_regime_down.joblib",
+          "up": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_12h_regime_up.joblib"
+        },
+        "regression": {
+          "down": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_12h_regime_down.joblib",
+          "up": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_12h_regime_up.joblib"
+        }
       },
       "calibration": {
         "method": "linear_scale",
-        "scale": 0.7669346743308032,
+        "scale": 0.7217325178142091,
         "min_confidence": 0.5,
-        "max_confidence": 0.99
+        "max_confidence": 0.99,
+        "decision_threshold": 0.43999999999999995
+      }
+    },
+    "1d": {
+      "generated_at": "2026-02-24T15:46:14.226924+00:00",
+      "symbol": "ETH-USD",
+      "horizon": "1d",
+      "status": "ok",
+      "model_version": "daily-20260224-152820",
+      "feature_version": "v2",
+      "granularity": "1h",
+      "steps_ahead": 24,
+      "rows_total": 703,
+      "rows_test": 106,
+      "selected_models": {
+        "classifier": "extra_trees_classifier",
+        "regressor": "gradient_boosting_regressor"
+      },
+      "feature_columns": [
+        "ret_1",
+        "ret_5",
+        "ret_15",
+        "ret_60",
+        "log_ret_1",
+        "ma_10_ratio",
+        "ma_30_ratio",
+        "ma_90_ratio",
+        "ema_12_ratio",
+        "ema_26_ratio",
+        "volatility_20",
+        "volatility_60",
+        "volume_z_20",
+        "rsi_14",
+        "trend_slope_30",
+        "mu_20",
+        "sigma_20",
+        "gbm_expected_ret_1",
+        "gbm_var_1",
+        "shock_z_20",
+        "markov_prob_down",
+        "markov_prob_flat",
+        "markov_prob_up"
+      ],
+      "metrics": {
+        "accuracy": 0.5094339622641509,
+        "precision": 0.5108695652173914,
+        "recall": 0.8703703703703703,
+        "f1": 0.6438356164383562,
+        "roc_auc": 0.48219373219373224,
+        "mae": 30.98181645042556,
+        "rmse": 41.44113841678928,
+        "mape": 0.016375939560159477
+      },
+      "baseline": {
+        "accuracy": 0.5094339622641509,
+        "f1": 0.675,
+        "rmse": 51.03881922541437,
+        "mae": 39.0211320754717,
+        "mape": 0.020644152149677877
+      },
+      "near_pass_delta": {
+        "f1_vs_baseline": -0.03116438356164386,
+        "accuracy_vs_baseline": 0.0,
+        "rmse_vs_baseline": 9.597680808625093
+      },
+      "martingale_diagnostic": {
+        "acf1": 0.8021751479876411,
+        "variance": 916.2695709300195,
+        "pass": false
+      },
+      "martingale_enforced": false,
+      "regression_target": "log_return",
+      "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+      "classification_label_mode": "triple_barrier",
+      "triple_barrier_sigma_mult": 1.0,
+      "log_return_clip": 0.75,
+      "confidence_slice": {
+        "threshold": 0.62,
+        "coverage": 0.27358490566037735,
+        "selected_samples": 29.0,
+        "precision": 0.5862068965517241,
+        "accuracy": 0.5862068965517241
+      },
+      "regime_breakdown": {
+        "down": {
+          "count": 106.0,
+          "accuracy": 0.5094339622641509,
+          "f1": 0.6438356164383562
+        }
+      },
+      "top_features": {
+        "classifier": [
+          {
+            "feature": "ret_60",
+            "importance": 0.0575478241507445
+          },
+          {
+            "feature": "markov_prob_flat",
+            "importance": 0.0549844979540273
+          },
+          {
+            "feature": "ma_90_ratio",
+            "importance": 0.053417251015562134
+          },
+          {
+            "feature": "gbm_var_1",
+            "importance": 0.052430134645818444
+          },
+          {
+            "feature": "sigma_20",
+            "importance": 0.05198668019479344
+          },
+          {
+            "feature": "volatility_20",
+            "importance": 0.05164752481078583
+          },
+          {
+            "feature": "rsi_14",
+            "importance": 0.0508227691410009
+          },
+          {
+            "feature": "trend_slope_30",
+            "importance": 0.048374519610690704
+          }
+        ],
+        "regressor": [
+          {
+            "feature": "volatility_60",
+            "importance": 0.219133882983936
+          },
+          {
+            "feature": "ma_90_ratio",
+            "importance": 0.15595300203090054
+          },
+          {
+            "feature": "ret_60",
+            "importance": 0.13041460627588608
+          },
+          {
+            "feature": "trend_slope_30",
+            "importance": 0.09382266803927589
+          },
+          {
+            "feature": "markov_prob_flat",
+            "importance": 0.07151434152017525
+          },
+          {
+            "feature": "sigma_20",
+            "importance": 0.0673039165589456
+          },
+          {
+            "feature": "markov_prob_down",
+            "importance": 0.05189908506229411
+          },
+          {
+            "feature": "gbm_var_1",
+            "importance": 0.04337088004001076
+          }
+        ]
+      },
+      "promotion_gate": {
+        "passed": false,
+        "failed_reasons": [
+          "classification_f1_not_above_baseline",
+          "classification_accuracy_not_above_baseline"
+        ],
+        "rules": {
+          "classification": [
+            "f1 > baseline.f1",
+            "accuracy > baseline.accuracy"
+          ],
+          "regression": [
+            "rmse < baseline.rmse"
+          ],
+          "stochastic": [
+            "abs(residual_acf1) <= 0.10 (strict mode only)"
+          ]
+        }
+      },
+      "artifact_paths": {
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_1d.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_1d.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/calibration_1d.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/metrics_1d.json"
+      },
+      "regime_artifact_paths": {
+        "classification": {
+          "down": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_1d_regime_down.joblib"
+        },
+        "regression": {
+          "down": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_1d_regime_down.joblib"
+        }
+      },
+      "calibration": {
+        "method": "linear_scale",
+        "scale": 0.8752720009154743,
+        "min_confidence": 0.5,
+        "max_confidence": 0.99,
+        "decision_threshold": 0.5
       }
     },
     "1w": {
+      "generated_at": "2026-02-24T15:47:05.918613+00:00",
       "symbol": "ETH-USD",
       "horizon": "1w",
-      "status": "insufficient_data",
-      "reason": "no_granularity_meets_minimum",
-      "required_min_samples": 180
+      "status": "ok",
+      "model_version": "daily-20260224-152820",
+      "feature_version": "v2",
+      "granularity": "1d",
+      "steps_ahead": 7,
+      "rows_total": 1408,
+      "rows_test": 212,
+      "selected_models": {
+        "classifier": "stacking_classifier",
+        "regressor": "random_forest_regressor"
+      },
+      "feature_columns": [
+        "ret_1",
+        "ret_5",
+        "ret_15",
+        "ret_60",
+        "log_ret_1",
+        "ma_10_ratio",
+        "ma_30_ratio",
+        "ma_90_ratio",
+        "ema_12_ratio",
+        "ema_26_ratio",
+        "volatility_20",
+        "volatility_60",
+        "volume_z_20",
+        "rsi_14",
+        "trend_slope_30",
+        "mu_20",
+        "sigma_20",
+        "gbm_expected_ret_1",
+        "gbm_var_1",
+        "shock_z_20",
+        "markov_prob_down",
+        "markov_prob_flat",
+        "markov_prob_up"
+      ],
+      "metrics": {
+        "accuracy": 0.42452830188679247,
+        "precision": 0.42452830188679247,
+        "recall": 1.0,
+        "f1": 0.5960264900662252,
+        "roc_auc": 0.47877959927140257,
+        "mae": 263.0875689805971,
+        "rmse": 350.42116249017727,
+        "mape": 0.07957209975848609
+      },
+      "baseline": {
+        "accuracy": 0.42452830188679247,
+        "f1": 0.5960264900662252,
+        "rmse": 329.40154326831436,
+        "mae": 253.0256603773585,
+        "mape": 0.0753881215204394
+      },
+      "near_pass_delta": {
+        "f1_vs_baseline": 0.0,
+        "accuracy_vs_baseline": 0.0,
+        "rmse_vs_baseline": -21.01961922186291
+      },
+      "martingale_diagnostic": {
+        "acf1": 0.8497849904164396,
+        "variance": 118998.35512936217,
+        "pass": false
+      },
+      "martingale_enforced": false,
+      "regression_target": "log_return",
+      "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+      "classification_label_mode": "triple_barrier",
+      "triple_barrier_sigma_mult": 1.0,
+      "log_return_clip": 1.25,
+      "confidence_slice": {
+        "threshold": 0.62,
+        "coverage": 0.08490566037735849,
+        "selected_samples": 18.0,
+        "precision": 0.4444444444444444,
+        "accuracy": 0.4444444444444444
+      },
+      "regime_breakdown": {
+        "down": {
+          "count": 111.0,
+          "accuracy": 0.43243243243243246,
+          "f1": 0.6037735849056604
+        },
+        "up": {
+          "count": 101.0,
+          "accuracy": 0.4158415841584158,
+          "f1": 0.5874125874125874
+        }
+      },
+      "top_features": {
+        "classifier": [],
+        "regressor": [
+          {
+            "feature": "markov_prob_flat",
+            "importance": 0.15145907411683357
+          },
+          {
+            "feature": "volatility_60",
+            "importance": 0.12472763225451133
+          },
+          {
+            "feature": "ret_60",
+            "importance": 0.10725194480285814
+          },
+          {
+            "feature": "trend_slope_30",
+            "importance": 0.06908809938252827
+          },
+          {
+            "feature": "gbm_var_1",
+            "importance": 0.06851681025172952
+          },
+          {
+            "feature": "ma_90_ratio",
+            "importance": 0.05936005242977885
+          },
+          {
+            "feature": "volatility_20",
+            "importance": 0.04818834052226406
+          },
+          {
+            "feature": "sigma_20",
+            "importance": 0.046136619754667235
+          }
+        ]
+      },
+      "promotion_gate": {
+        "passed": false,
+        "failed_reasons": [
+          "classification_f1_not_above_baseline",
+          "classification_accuracy_not_above_baseline",
+          "regression_rmse_not_below_baseline"
+        ],
+        "rules": {
+          "classification": [
+            "f1 > baseline.f1",
+            "accuracy > baseline.accuracy"
+          ],
+          "regression": [
+            "rmse < baseline.rmse"
+          ],
+          "stochastic": [
+            "abs(residual_acf1) <= 0.10 (strict mode only)"
+          ]
+        }
+      },
+      "artifact_paths": {
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_1w.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_1w.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/calibration_1w.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/metrics_1w.json"
+      },
+      "regime_artifact_paths": {
+        "classification": {
+          "down": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_1w_regime_down.joblib",
+          "up": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_1w_regime_up.joblib"
+        },
+        "regression": {
+          "down": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_1w_regime_down.joblib",
+          "up": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_1w_regime_up.joblib"
+        }
+      },
+      "calibration": {
+        "method": "linear_scale",
+        "scale": 0.9070034059116484,
+        "min_confidence": 0.5,
+        "max_confidence": 0.99,
+        "decision_threshold": 0.35
+      }
     },
     "1mo": {
+      "generated_at": "2026-02-24T15:47:58.570187+00:00",
       "symbol": "ETH-USD",
       "horizon": "1mo",
-      "status": "insufficient_data",
-      "reason": "no_granularity_meets_minimum",
-      "required_min_samples": 140
+      "status": "ok",
+      "model_version": "daily-20260224-152820",
+      "feature_version": "v2",
+      "granularity": "1d",
+      "steps_ahead": 30,
+      "rows_total": 1385,
+      "rows_test": 208,
+      "selected_models": {
+        "classifier": "extra_trees_classifier",
+        "regressor": "gradient_boosting_regressor"
+      },
+      "feature_columns": [
+        "ret_1",
+        "ret_5",
+        "ret_15",
+        "ret_60",
+        "log_ret_1",
+        "ma_10_ratio",
+        "ma_30_ratio",
+        "ma_90_ratio",
+        "ema_12_ratio",
+        "ema_26_ratio",
+        "volatility_20",
+        "volatility_60",
+        "volume_z_20",
+        "rsi_14",
+        "trend_slope_30",
+        "mu_20",
+        "sigma_20",
+        "gbm_expected_ret_1",
+        "gbm_var_1",
+        "shock_z_20",
+        "markov_prob_down",
+        "markov_prob_flat",
+        "markov_prob_up"
+      ],
+      "metrics": {
+        "accuracy": 0.5048076923076923,
+        "precision": 0.5136612021857924,
+        "recall": 0.8703703703703703,
+        "f1": 0.6460481099656358,
+        "roc_auc": 0.4751851851851852,
+        "mae": 620.5184023486029,
+        "rmse": 780.0995781469696,
+        "mape": 0.2065905024376025
+      },
+      "baseline": {
+        "accuracy": 0.5192307692307693,
+        "f1": 0.6835443037974683,
+        "rmse": 711.3167308387691,
+        "mae": 566.628076923077,
+        "mape": 0.18420985356100641
+      },
+      "near_pass_delta": {
+        "f1_vs_baseline": -0.03749619383183256,
+        "accuracy_vs_baseline": -0.014423076923076983,
+        "rmse_vs_baseline": -68.78284730820053
+      },
+      "martingale_diagnostic": {
+        "acf1": 0.9456106472920021,
+        "variance": 576808.4949801482,
+        "pass": false
+      },
+      "martingale_enforced": false,
+      "regression_target": "log_return",
+      "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+      "classification_label_mode": "triple_barrier",
+      "triple_barrier_sigma_mult": 1.0,
+      "log_return_clip": 1.75,
+      "confidence_slice": {
+        "threshold": 0.62,
+        "coverage": 0.34134615384615385,
+        "selected_samples": 71.0,
+        "precision": 0.5869565217391305,
+        "accuracy": 0.5352112676056338
+      },
+      "regime_breakdown": {
+        "down": {
+          "count": 116.0,
+          "accuracy": 0.5431034482758621,
+          "f1": 0.6826347305389222
+        },
+        "up": {
+          "count": 92.0,
+          "accuracy": 0.45652173913043476,
+          "f1": 0.5967741935483871
+        }
+      },
+      "top_features": {
+        "classifier": [
+          {
+            "feature": "volatility_20",
+            "importance": 0.05597555446819161
+          },
+          {
+            "feature": "volatility_60",
+            "importance": 0.05472679919385046
+          },
+          {
+            "feature": "sigma_20",
+            "importance": 0.05432389328384442
+          },
+          {
+            "feature": "gbm_var_1",
+            "importance": 0.052819982937163994
+          },
+          {
+            "feature": "ret_60",
+            "importance": 0.052583282424981975
+          },
+          {
+            "feature": "trend_slope_30",
+            "importance": 0.04904079742179497
+          },
+          {
+            "feature": "ma_90_ratio",
+            "importance": 0.046036401499383324
+          },
+          {
+            "feature": "gbm_expected_ret_1",
+            "importance": 0.0456156700666651
+          }
+        ],
+        "regressor": [
+          {
+            "feature": "markov_prob_flat",
+            "importance": 0.22564004490176898
+          },
+          {
+            "feature": "volatility_60",
+            "importance": 0.219479493655082
+          },
+          {
+            "feature": "ma_90_ratio",
+            "importance": 0.11638197012866669
+          },
+          {
+            "feature": "trend_slope_30",
+            "importance": 0.08204971881395172
+          },
+          {
+            "feature": "ret_60",
+            "importance": 0.07781805926374408
+          },
+          {
+            "feature": "markov_prob_down",
+            "importance": 0.05671267882184142
+          },
+          {
+            "feature": "markov_prob_up",
+            "importance": 0.034013770340735675
+          },
+          {
+            "feature": "log_ret_1",
+            "importance": 0.029053591707646858
+          }
+        ]
+      },
+      "promotion_gate": {
+        "passed": false,
+        "failed_reasons": [
+          "classification_f1_not_above_baseline",
+          "classification_accuracy_not_above_baseline",
+          "regression_rmse_not_below_baseline"
+        ],
+        "rules": {
+          "classification": [
+            "f1 > baseline.f1",
+            "accuracy > baseline.accuracy"
+          ],
+          "regression": [
+            "rmse < baseline.rmse"
+          ],
+          "stochastic": [
+            "abs(residual_acf1) <= 0.10 (strict mode only)"
+          ]
+        }
+      },
+      "artifact_paths": {
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_1mo.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_1mo.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/calibration_1mo.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/metrics_1mo.json"
+      },
+      "regime_artifact_paths": {
+        "classification": {
+          "down": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_1mo_regime_down.joblib",
+          "up": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_1mo_regime_up.joblib"
+        },
+        "regression": {
+          "down": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_1mo_regime_down.joblib",
+          "up": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_1mo_regime_up.joblib"
+        }
+      },
+      "calibration": {
+        "method": "linear_scale",
+        "scale": 0.7950844915364748,
+        "min_confidence": 0.5,
+        "max_confidence": 0.99,
+        "decision_threshold": 0.36
+      }
     },
     "3mo": {
+      "generated_at": "2026-02-24T15:48:50.669905+00:00",
       "symbol": "ETH-USD",
       "horizon": "3mo",
-      "status": "insufficient_data",
-      "reason": "no_granularity_meets_minimum",
-      "required_min_samples": 120
+      "status": "ok",
+      "model_version": "daily-20260224-152820",
+      "feature_version": "v2",
+      "granularity": "1d",
+      "steps_ahead": 90,
+      "rows_total": 1325,
+      "rows_test": 199,
+      "selected_models": {
+        "classifier": "logistic_regression",
+        "regressor": "gradient_boosting_regressor"
+      },
+      "feature_columns": [
+        "ret_1",
+        "ret_5",
+        "ret_15",
+        "ret_60",
+        "log_ret_1",
+        "ma_10_ratio",
+        "ma_30_ratio",
+        "ma_90_ratio",
+        "ema_12_ratio",
+        "ema_26_ratio",
+        "volatility_20",
+        "volatility_60",
+        "volume_z_20",
+        "rsi_14",
+        "trend_slope_30",
+        "mu_20",
+        "sigma_20",
+        "gbm_expected_ret_1",
+        "gbm_var_1",
+        "shock_z_20",
+        "markov_prob_down",
+        "markov_prob_flat",
+        "markov_prob_up"
+      ],
+      "metrics": {
+        "accuracy": 0.5326633165829145,
+        "precision": 0.5326633165829145,
+        "recall": 1.0,
+        "f1": 0.6950819672131148,
+        "roc_auc": 0.49553662000405757,
+        "mae": 1325.0600933741948,
+        "rmse": 1505.7176133833655,
+        "mape": 0.39295115171819617
+      },
+      "baseline": {
+        "accuracy": 0.5326633165829145,
+        "f1": 0.6950819672131148,
+        "rmse": 1396.4031337899137,
+        "mae": 1287.3396984924623,
+        "mape": 0.38520780945583977
+      },
+      "near_pass_delta": {
+        "f1_vs_baseline": 0.0,
+        "accuracy_vs_baseline": 0.0,
+        "rmse_vs_baseline": -109.31447959345178
+      },
+      "martingale_diagnostic": {
+        "acf1": 0.9474597516539506,
+        "variance": 2223833.141669734,
+        "pass": false
+      },
+      "martingale_enforced": false,
+      "regression_target": "log_return",
+      "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+      "classification_label_mode": "triple_barrier",
+      "triple_barrier_sigma_mult": 1.0,
+      "log_return_clip": 2.5,
+      "confidence_slice": {
+        "threshold": 0.62,
+        "coverage": 0.0,
+        "selected_samples": 0.0,
+        "precision": NaN,
+        "accuracy": NaN
+      },
+      "regime_breakdown": {
+        "down": {
+          "count": 110.0,
+          "accuracy": 0.5909090909090909,
+          "f1": 0.7428571428571429
+        },
+        "up": {
+          "count": 89.0,
+          "accuracy": 0.4606741573033708,
+          "f1": 0.6307692307692307
+        }
+      },
+      "top_features": {
+        "classifier": [
+          {
+            "feature": "ma_30_ratio",
+            "importance": 0.6013224124220383
+          },
+          {
+            "feature": "ema_26_ratio",
+            "importance": 0.5215696839650419
+          },
+          {
+            "feature": "trend_slope_30",
+            "importance": 0.4746015068629154
+          },
+          {
+            "feature": "ma_90_ratio",
+            "importance": 0.4421820737329327
+          },
+          {
+            "feature": "ret_1",
+            "importance": 0.3350910396676755
+          },
+          {
+            "feature": "gbm_var_1",
+            "importance": 0.3078004989143408
+          },
+          {
+            "feature": "ema_12_ratio",
+            "importance": 0.26804529253646164
+          },
+          {
+            "feature": "gbm_expected_ret_1",
+            "importance": 0.22759825898870328
+          }
+        ],
+        "regressor": [
+          {
+            "feature": "volatility_60",
+            "importance": 0.20672334967135725
+          },
+          {
+            "feature": "markov_prob_flat",
+            "importance": 0.1627882390673273
+          },
+          {
+            "feature": "ret_60",
+            "importance": 0.14132801903853476
+          },
+          {
+            "feature": "markov_prob_up",
+            "importance": 0.10868748419517545
+          },
+          {
+            "feature": "markov_prob_down",
+            "importance": 0.08704865178690711
+          },
+          {
+            "feature": "ma_90_ratio",
+            "importance": 0.06675373205454997
+          },
+          {
+            "feature": "log_ret_1",
+            "importance": 0.04884359922047951
+          },
+          {
+            "feature": "ret_1",
+            "importance": 0.04512536422128304
+          }
+        ]
+      },
+      "promotion_gate": {
+        "passed": false,
+        "failed_reasons": [
+          "classification_f1_not_above_baseline",
+          "classification_accuracy_not_above_baseline",
+          "regression_rmse_not_below_baseline"
+        ],
+        "rules": {
+          "classification": [
+            "f1 > baseline.f1",
+            "accuracy > baseline.accuracy"
+          ],
+          "regression": [
+            "rmse < baseline.rmse"
+          ],
+          "stochastic": [
+            "abs(residual_acf1) <= 0.10 (strict mode only)"
+          ]
+        }
+      },
+      "artifact_paths": {
+        "classification": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_3mo.joblib",
+        "regression": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_3mo.joblib",
+        "calibration": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/calibration_3mo.json",
+        "metrics": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/metrics_3mo.json"
+      },
+      "regime_artifact_paths": {
+        "classification": {
+          "down": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_3mo_regime_down.joblib",
+          "up": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/cls_3mo_regime_up.joblib"
+        },
+        "regression": {
+          "down": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_3mo_regime_down.joblib",
+          "up": "/Users/devampatel/Documents/advanced-modular-crypto-prediction-model/backend/data/models/daily-20260224-152820/ETH-USD/reg_3mo_regime_up.joblib"
+        }
+      },
+      "calibration": {
+        "method": "linear_scale",
+        "scale": 0.9526336537631046,
+        "min_confidence": 0.5,
+        "max_confidence": 0.99,
+        "decision_threshold": 0.35
+      }
     }
   },
   "summary": {
-    "passed": 1,
-    "failed": 4,
-    "insufficient": 3
+    "passed": 0,
+    "failed": 8,
+    "insufficient": 0
   }
 }
