@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from statistics import pstdev
 
@@ -31,6 +32,20 @@ def _deterministic_signal(seed: str) -> tuple[str, float, float]:
     confidence = min(confidence, 0.89)
     predicted_close = 10.0 + float((score * 137) % 100000) / 10
     return direction, round(confidence, 4), round(predicted_close, 2)
+
+
+def _fallback_reference_close(symbol: str, horizon: str) -> float | None:
+    spec = _find_horizon_spec(horizon)
+    granularity = "1h"
+    if spec is not None and spec.candidates:
+        granularity = spec.candidates[0][0]
+    closes = _load_recent_closes(symbol, granularity, limit=8)
+    if not closes:
+        return None
+    latest = float(closes[-1])
+    if latest <= 0:
+        return None
+    return latest
 
 
 def _find_horizon_spec(horizon: str) -> HorizonSpec | None:
@@ -130,6 +145,27 @@ def _prediction_range_and_risk(direction: str, confidence: float, horizon_vol: f
     return round(min_pct, 2), round(max_pct, 2), round(risk_score, 2), risk_level
 
 
+def _market_bias(direction: str) -> str:
+    return "bullish" if direction == "up" else "bearish"
+
+
+def _horizon_seconds(horizon: str) -> int:
+    label = horizon.strip().lower()
+    if label.endswith("mo"):
+        return int(label[:-2]) * 30 * 24 * 60 * 60
+    unit_seconds = {"m": 60, "h": 3600, "d": 86400, "w": 7 * 86400}
+    unit = label[-1:] if label else ""
+    if unit in unit_seconds and label[:-1].isdigit():
+        return int(label[:-1]) * unit_seconds[unit]
+    return 3600
+
+
+def _price_bounds_from_return_range(current_price: float, min_pct: float, max_pct: float) -> tuple[float, float]:
+    low = max(current_price * (1.0 + (min_pct / 100.0)), 1e-8)
+    high = max(current_price * (1.0 + (max_pct / 100.0)), 1e-8)
+    return (low, high) if low <= high else (high, low)
+
+
 def _latest_features(symbol: str, spec: HorizonSpec, selected_features: list[str] | None = None) -> tuple[pd.DataFrame, float, str, int] | None:
     active_features = selected_features or feature_columns_for_horizon(spec.label)
     for granularity, _steps in spec.candidates:
@@ -194,9 +230,12 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
     regression_target = str(metrics_meta.get("regression_target", "price_close"))
     if regression_target == "log_return":
         clipped = clip_log_return_predictions(np.array([reg_raw], dtype=float), payload.horizon)
-        pred_close = float(latest_close * math.exp(float(clipped[0])))
+        model_pred_close = float(latest_close * math.exp(float(clipped[0])))
     else:
-        pred_close = reg_raw
+        model_pred_close = reg_raw
+    regression_blend_alpha = float(metrics_meta.get("regression_blend_alpha", 1.0))
+    regression_blend_alpha = float(min(1.0, max(0.0, regression_blend_alpha)))
+    pred_close = (regression_blend_alpha * model_pred_close) + ((1.0 - regression_blend_alpha) * latest_close)
     direction = "up" if raw_prob_up >= decision_threshold else "down"
     confidence = round(_calibrate_confidence(raw_prob_up, calibration), 4)
     settings = get_settings()
@@ -209,6 +248,7 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
         confidence=confidence,
         horizon_vol=horizon_vol,
     )
+    low_usd, high_usd = _price_bounds_from_return_range(latest_close, range_min_pct, range_max_pct)
 
     model_version = registry.get_active_model_version()
     debug = None
@@ -221,6 +261,7 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
             "regime_routing": regime_name,
             "decision_threshold": f"{decision_threshold:.4f}",
             "regression_target": regression_target,
+            "regression_blend_alpha": f"{regression_blend_alpha:.4f}",
             "volatility_source_granularity": vol_granularity,
             "horizon_volatility": f"{horizon_vol:.6f}",
             "model_confidence_threshold": f"{float(settings.prediction_confidence_min_for_model):.4f}",
@@ -232,12 +273,17 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
             symbol=payload.symbol,
             horizon=payload.horizon,
             direction=direction,
+            market_bias=_market_bias(direction),
             confidence=confidence,
+            current_price=round(max(latest_close, 1e-8), 8),
             predicted_close=round(max(pred_close, 1e-8), 8),
+            predicted_low_usd=round(low_usd, 8),
+            predicted_high_usd=round(high_usd, 8),
             return_range_min_pct=range_min_pct,
             return_range_max_pct=range_max_pct,
             risk_score=risk_score,
             risk_level=risk_level,
+            horizon_end_at=datetime.now(UTC) + timedelta(seconds=_horizon_seconds(payload.horizon)),
             model_version=model_version,
             debug=debug,
         ),
@@ -251,13 +297,21 @@ def generate_prediction(payload: PredictionRequest) -> PredictionResponse:
     if model_response is not None:
         return model_response
 
-    direction, confidence, predicted_close = _deterministic_signal(f"{payload.symbol}:{payload.horizon}")
+    direction, confidence, fallback_stub_close = _deterministic_signal(f"{payload.symbol}:{payload.horizon}")
     horizon_vol, vol_granularity = _realized_volatility(payload.symbol, payload.horizon)
     range_min_pct, range_max_pct, risk_score, risk_level = _prediction_range_and_risk(
         direction=direction,
         confidence=confidence,
         horizon_vol=horizon_vol,
     )
+    reference_close = _fallback_reference_close(payload.symbol, payload.horizon)
+    implied_return_pct = (range_min_pct + range_max_pct) / 2.0
+    if reference_close is not None:
+        predicted_close = max(reference_close * (1.0 + implied_return_pct / 100.0), 1e-8)
+    else:
+        predicted_close = max(fallback_stub_close, 1e-8)
+    current_price = reference_close if reference_close is not None else predicted_close
+    low_usd, high_usd = _price_bounds_from_return_range(current_price, range_min_pct, range_max_pct)
 
     debug = None
     if payload.include_debug:
@@ -266,18 +320,25 @@ def generate_prediction(payload: PredictionRequest) -> PredictionResponse:
             "fallback_reason": fallback_reason or "model_inference_failed",
             "volatility_source_granularity": vol_granularity,
             "horizon_volatility": f"{horizon_vol:.6f}",
+            "fallback_reference_close": f"{reference_close:.8f}" if reference_close is not None else "unavailable",
+            "fallback_implied_return_pct": f"{implied_return_pct:.4f}",
         }
 
     return PredictionResponse(
         symbol=payload.symbol,
         horizon=payload.horizon,
         direction=direction,
+        market_bias=_market_bias(direction),
         confidence=confidence,
-        predicted_close=predicted_close,
+        current_price=round(max(current_price, 1e-8), 8),
+        predicted_close=round(predicted_close, 8),
+        predicted_low_usd=round(low_usd, 8),
+        predicted_high_usd=round(high_usd, 8),
         return_range_min_pct=range_min_pct,
         return_range_max_pct=range_max_pct,
         risk_score=risk_score,
         risk_level=risk_level,
+        horizon_end_at=datetime.now(UTC) + timedelta(seconds=_horizon_seconds(payload.horizon)),
         model_version=ModelRegistry().get_active_model_version() or settings.default_model_version,
         debug=debug,
     )

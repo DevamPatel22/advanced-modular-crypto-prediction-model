@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     default_horizon: str = "1h"
     default_model_version: str = "daily-bootstrap"
     supported_symbols: str = "BTC-USD,ETH-USD,SOL-USD"
-    supported_horizons: str = "5m,1h,6h,12h,1d,1w,1mo,3mo"
+    supported_horizons: str = "5m,1h,3h,6h,12h,1d,1w,1mo,3mo"
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     markets_source_url: str = "https://api.exchange.coinbase.com/products"
     symbol_cache_ttl_seconds: int = 300
@@ -32,9 +32,10 @@ class Settings(BaseSettings):
     ingestion_cycle_seconds: int = 600
     retrain_schedule_cron: str = "0 2 * * *"
     martingale_gate_mode: str = "bootstrap"
-    bootstrap_phase1_horizons: str = "5m,1h,6h,12h"
+    bootstrap_phase1_horizons: str = "5m,1h,3h,6h,12h"
     classification_label_mode: str = "triple_barrier"
     triple_barrier_sigma_mult: float = 1.0
+    regime_models_enabled: bool = True
     high_confidence_threshold: float = 0.62
     prediction_confidence_min_for_model: float = 0.56
     prediction_abstain_to_fallback: bool = True

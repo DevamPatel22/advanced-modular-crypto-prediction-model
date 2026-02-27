@@ -1,5 +1,5 @@
 export type Symbol = string;
-export type Horizon = "5m" | "1h" | "6h" | "12h" | "1d" | "1w" | "1mo" | "3mo";
+export type Horizon = "5m" | "1h" | "3h" | "6h" | "12h" | "1d" | "1w" | "1mo" | "3mo";
 
 export interface PredictionRequest {
   symbol: Symbol;
@@ -11,12 +11,17 @@ export interface PredictionResponse {
   symbol: Symbol;
   horizon: Horizon;
   direction: "up" | "down";
+  market_bias: "bullish" | "bearish";
   confidence: number;
+  current_price: number;
   predicted_close: number;
+  predicted_low_usd: number;
+  predicted_high_usd: number;
   return_range_min_pct: number;
   return_range_max_pct: number;
   risk_score: number;
   risk_level: "low" | "medium" | "high";
+  horizon_end_at: string;
   model_version: string;
   generated_at: string;
   debug?: Record<string, string> | null;

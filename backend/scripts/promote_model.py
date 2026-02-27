@@ -48,6 +48,11 @@ def main() -> None:
         default=20,
         help="Batch size for phase2 activation",
     )
+    parser.add_argument(
+        "--merge-existing",
+        action="store_true",
+        help="Merge newly passed pairs with currently promoted registry entries",
+    )
     args = parser.parse_args()
     settings = get_settings()
     bootstrap_horizons = {
@@ -111,6 +116,21 @@ def main() -> None:
             promoted[symbol] = passed_by_symbol[symbol]
     else:
         promoted = passed_by_symbol
+
+    if args.merge_existing:
+        existing_promoted = registry.read().get("promoted", {})
+        merged: dict[str, dict[str, bool]] = {}
+        if isinstance(existing_promoted, dict):
+            for symbol, horizons in existing_promoted.items():
+                if not isinstance(horizons, dict):
+                    continue
+                merged[str(symbol)] = {str(h): bool(v) for h, v in horizons.items() if bool(v)}
+        for symbol, horizons in promoted.items():
+            bucket = merged.setdefault(symbol, {})
+            for horizon, passed in horizons.items():
+                if bool(passed):
+                    bucket[horizon] = True
+        promoted = {symbol: horizons for symbol, horizons in merged.items() if horizons}
 
     promoted_pairs = sum(len(item) for item in promoted.values())
     promoted_symbols = len(promoted)

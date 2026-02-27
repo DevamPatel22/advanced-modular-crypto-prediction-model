@@ -1,9 +1,15 @@
 {
-  "active_model_version": "daily-20260224-142116",
+  "active_model_version": "targeted-thr-20260227-223143",
   "promoted": {
     "SOL-USD": {
       "5m": true
+    },
+    "BTC-USD": {
+      "6h": true
+    },
+    "ETH-USD": {
+      "12h": true
     }
   },
-  "updated_at": "2026-02-24T14:45:20.253885+00:00"
+  "updated_at": "2026-02-27T22:32:57.071623+00:00"
 }

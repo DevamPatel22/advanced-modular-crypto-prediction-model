@@ -25,14 +25,16 @@ Build a reliable, scalable prediction platform that can evolve from MVP analytic
 - Triple-barrier classification labels, regime-aware evaluation breakdown, and confidence-slice diagnostics in training reports
 - Horizon-specific feature sets, calibrated per-horizon decision thresholds, and regime-routed model artifacts
 - Log-return regression target with clipped inverse transform and staged martingale gate (`bootstrap` to `strict`)
+- Validation-optimized regression blend (`regression_blend_alpha`) persisted per symbol/horizon for inference stability
 - Inference reliability guard: low-confidence model outputs can abstain to safe fallback based on config threshold
 - Source credibility safeguards in market data ingestion (integrity/freshness/divergence checks)
-- Bootstrap promotions now focus on short horizons first (`5m,1h,6h,12h`) for faster first qualified pairs
+- Bootstrap promotions now focus on short horizons first (`5m,1h,3h,6h,12h`) for faster first qualified pairs
 - Interactive frontend with:
   - markets homepage (search by symbol or coin name)
   - asset detail page (line/candlestick, ranges, MA/EMA/VA toggles)
   - dedicated prediction model tab
 - Prediction response includes risk-aware return ranges and risk score/level
+- Prediction response includes explicit bullish/bearish bias, current price anchor, projected USD bounds, and horizon-end timestamp
 - Baseline evaluation + full-universe training reports
 
 ## Repository Structure
@@ -84,6 +86,7 @@ Promotion (phased):
 ```bash
 cd backend
 python scripts/promote_model.py --candidate daily-20260213 --phase phase1
+python scripts/promote_model.py --candidate <version> --phase phase3 --merge-existing
 ```
 
 Model artifacts and registry:

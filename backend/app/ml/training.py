@@ -65,6 +65,7 @@ LOOKBACK_BUFFER = 50
 HORIZON_MIN_SAMPLES: dict[str, int] = {
     "5m": 300,
     "1h": 280,
+    "3h": 270,
     "6h": 260,
     "12h": 240,
     "1d": 220,
@@ -75,6 +76,7 @@ HORIZON_MIN_SAMPLES: dict[str, int] = {
 HORIZON_LOG_RETURN_CLIP: dict[str, float] = {
     "5m": 0.08,
     "1h": 0.18,
+    "3h": 0.26,
     "6h": 0.35,
     "12h": 0.50,
     "1d": 0.75,
@@ -111,6 +113,7 @@ class CandidateResult:
     model: Pipeline
     val_score: float
     decision_threshold: float = 0.5
+    regression_blend_alpha: float = 1.0
 
 
 def _triple_barrier_labels(
@@ -647,35 +650,80 @@ def _fit_pipeline_with_optional_weight(model: Pipeline, x: pd.DataFrame, y: pd.S
 
 
 def _best_threshold_for_f1(y_true: np.ndarray, y_prob: np.ndarray) -> tuple[float, float, float]:
-    best_threshold = 0.5
-    best_f1 = -1.0
-    best_accuracy = -1.0
-    for threshold in np.linspace(0.35, 0.70, 36):
+    baseline_pred = np.ones_like(y_true)
+    baseline_f1 = float(f1_score(y_true, baseline_pred, zero_division=0))
+    baseline_accuracy = float(accuracy_score(y_true, baseline_pred))
+    rows: list[tuple[float, float, float, float, float, float]] = []
+    for threshold in np.linspace(0.30, 0.75, 46):
         y_pred = (y_prob >= threshold).astype(int)
         score_f1 = float(f1_score(y_true, y_pred, zero_division=0))
         score_acc = float(accuracy_score(y_true, y_pred))
-        # Optimize primarily for F1 with accuracy tie-break.
-        if score_f1 > best_f1 or (math.isclose(score_f1, best_f1) and score_acc > best_accuracy):
-            best_threshold = float(threshold)
-            best_f1 = score_f1
-            best_accuracy = score_acc
-    return best_threshold, best_f1, best_accuracy
+        delta_f1 = score_f1 - baseline_f1
+        delta_acc = score_acc - baseline_accuracy
+        score = min(delta_f1, delta_acc) + (0.35 * delta_f1) + (0.20 * delta_acc) + (0.01 * score_f1)
+        rows.append((float(threshold), score_f1, score_acc, delta_f1, delta_acc, score))
+
+    # First priority: clear both classification gate dimensions.
+    both_pass = [row for row in rows if row[3] > 0 and row[4] > 0]
+    if both_pass:
+        best = max(both_pass, key=lambda row: (min(row[3], row[4]), row[3], row[4]))
+        return best[0], best[1], best[2]
+
+    # Second priority: keep accuracy at/above baseline while maximizing F1 lift.
+    acc_ok = [row for row in rows if row[4] >= 0]
+    if acc_ok:
+        best = max(acc_ok, key=lambda row: (row[3], row[1], row[4], row[5]))
+        return best[0], best[1], best[2]
+
+    # Fallback to previous composite scoring when no gate-friendly threshold exists.
+    best = max(rows, key=lambda row: (row[5], row[1], row[2]))
+    return best[0], best[1], best[2]
 
 
 def _select_best_classifier(split: SplitData) -> CandidateResult:
     best: CandidateResult | None = None
     sample_weight = _class_balance_sample_weight(split.y_train_cls)
+    val_true = split.y_val_cls.to_numpy(dtype=int)
+    val_baseline_pred = np.ones_like(val_true)
+    val_baseline_f1 = float(f1_score(val_true, val_baseline_pred, zero_division=0))
+    val_baseline_accuracy = float(accuracy_score(val_true, val_baseline_pred))
     for model_name, model in _classification_candidates():
         _fit_pipeline_with_optional_weight(model, split.x_train, split.y_train_cls, sample_weight)
         val_prob = model.predict_proba(split.x_val)[:, 1]
-        threshold, score_f1, score_acc = _best_threshold_for_f1(split.y_val_cls.to_numpy(dtype=int), val_prob)
-        # Keep accuracy as tie-breaker in model ranking.
-        score = score_f1 + (score_acc * 0.05)
+        threshold, score_f1, score_acc = _best_threshold_for_f1(val_true, val_prob)
+        delta_f1 = score_f1 - val_baseline_f1
+        delta_acc = score_acc - val_baseline_accuracy
+        # Rank by gate-oriented validation margins rather than raw F1 alone.
+        score = min(delta_f1, delta_acc) + (0.35 * delta_f1) + (0.20 * delta_acc)
         if best is None or score > best.val_score:
             best = CandidateResult(model_name=model_name, model=model, val_score=score, decision_threshold=threshold)
     if best is None:
         raise RuntimeError("No classification candidate available")
     return best
+
+
+def _best_regression_blend_alpha(
+    y_true: np.ndarray,
+    y_pred_model: np.ndarray,
+    y_pred_baseline: np.ndarray,
+) -> tuple[float, float]:
+    best_alpha = 1.0
+    best_rmse = math.inf
+    candidates = np.unique(
+        np.concatenate(
+            [
+                np.linspace(0.0, 1.0, 41),
+                np.array([0.01, 0.02, 0.03, 0.04, 0.96, 0.97, 0.98, 0.99]),
+            ]
+        )
+    )
+    for alpha in candidates:
+        blended = (alpha * y_pred_model) + ((1.0 - alpha) * y_pred_baseline)
+        rmse = float(math.sqrt(mean_squared_error(y_true, blended)))
+        if rmse < best_rmse:
+            best_alpha = float(alpha)
+            best_rmse = rmse
+    return best_alpha, best_rmse
 
 
 def _select_best_regressor(split: SplitData, horizon: str) -> CandidateResult:
@@ -684,10 +732,15 @@ def _select_best_regressor(split: SplitData, horizon: str) -> CandidateResult:
         model.fit(split.x_train, split.y_train_reg)
         val_pred_log_return = model.predict(split.x_val)
         val_pred_log_return = clip_log_return_predictions(val_pred_log_return, horizon)
-        val_pred_close = split.current_close_val * np.exp(val_pred_log_return)
-        score = -float(math.sqrt(mean_squared_error(split.target_close_val, val_pred_close)))
+        val_pred_close_model = split.current_close_val * np.exp(val_pred_log_return)
+        alpha, best_rmse = _best_regression_blend_alpha(
+            y_true=split.target_close_val,
+            y_pred_model=val_pred_close_model,
+            y_pred_baseline=split.current_close_val,
+        )
+        score = -best_rmse
         if best is None or score > best.val_score:
-            best = CandidateResult(model_name=model_name, model=model, val_score=score)
+            best = CandidateResult(model_name=model_name, model=model, val_score=score, regression_blend_alpha=alpha)
     if best is None:
         raise RuntimeError("No regression candidate available")
     return best
@@ -929,7 +982,11 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
 
     cls_best = _select_best_classifier(split)
     reg_best = _select_best_regressor(split, spec.label)
-    regime_cls_models, regime_reg_models = _train_regime_models(split, spec.label)
+    settings = get_settings()
+    regime_cls_models: dict[str, Pipeline] = {}
+    regime_reg_models: dict[str, Pipeline] = {}
+    if settings.regime_models_enabled:
+        regime_cls_models, regime_reg_models = _train_regime_models(split, spec.label)
 
     cls_prob = cls_best.model.predict_proba(split.x_test)[:, 1]
     cls_pred = (cls_prob >= cls_best.decision_threshold).astype(int)
@@ -937,7 +994,7 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
     reg_pred_log_return = clip_log_return_predictions(reg_pred_log_return, spec.label)
     reg_pred = split.current_close_test * np.exp(reg_pred_log_return)
 
-    if regime_cls_models or regime_reg_models:
+    if settings.regime_models_enabled and (regime_cls_models or regime_reg_models):
         blended_prob = cls_prob.copy()
         blended_reg = reg_pred.copy()
         regime_names = {0: "down", 1: "flat", 2: "up"}
@@ -956,6 +1013,9 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         cls_pred = (cls_prob >= cls_best.decision_threshold).astype(int)
         reg_pred = blended_reg
 
+    reg_blend_alpha = float(np.clip(reg_best.regression_blend_alpha, 0.0, 1.0))
+    reg_pred = (reg_blend_alpha * reg_pred) + ((1.0 - reg_blend_alpha) * split.current_close_test)
+
     metrics = _metrics(
         y_true_cls=split.y_test_cls,
         y_pred_cls=cls_pred,
@@ -963,7 +1023,6 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         y_true_reg=split.target_close_test,
         y_pred_reg=reg_pred,
     )
-    settings = get_settings()
     confidence_slice = _confidence_slice_metrics(
         y_true_cls=split.y_test_cls,
         y_pred_cls=cls_pred,
@@ -1029,6 +1088,7 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         "selected_models": {
             "classifier": cls_best.model_name,
             "regressor": reg_best.model_name,
+            "regression_blend_alpha": reg_blend_alpha,
         },
         "feature_columns": split.feature_columns,
         "metrics": metrics,
@@ -1038,8 +1098,10 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         "martingale_enforced": martingale_enforced,
         "regression_target": "log_return",
         "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+        "regression_blend_alpha": reg_blend_alpha,
         "classification_label_mode": settings.classification_label_mode,
         "triple_barrier_sigma_mult": float(settings.triple_barrier_sigma_mult),
+        "regime_models_enabled": bool(settings.regime_models_enabled),
         "log_return_clip": float(HORIZON_LOG_RETURN_CLIP.get(spec.label, 1.0)),
         "confidence_slice": confidence_slice,
         "regime_breakdown": regime_breakdown,

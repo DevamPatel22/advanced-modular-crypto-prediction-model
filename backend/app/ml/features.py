@@ -42,7 +42,7 @@ FEATURE_COLUMNS = [
     "markov_prob_up",
 ]
 
-SHORT_HORIZONS = {"5m", "1h", "6h", "12h"}
+SHORT_HORIZONS = {"5m", "1h", "3h", "6h", "12h"}
 LONG_HORIZONS = {"1d", "1w", "1mo", "3mo"}
 
 SHORT_FEATURE_COLUMNS = [
@@ -105,6 +105,7 @@ class HorizonSpec:
 HORIZON_SPECS: list[HorizonSpec] = [
     HorizonSpec("5m", [("1m", 5), ("5m", 1)]),
     HorizonSpec("1h", [("1h", 1), ("15m", 4), ("5m", 12), ("1m", 60)]),
+    HorizonSpec("3h", [("1h", 3), ("15m", 12), ("5m", 36), ("1m", 180)]),
     HorizonSpec("6h", [("1h", 6), ("15m", 24), ("5m", 72)]),
     HorizonSpec("12h", [("1h", 12), ("15m", 48), ("5m", 144)]),
     HorizonSpec("1d", [("1h", 24), ("6h", 4), ("1d", 1)]),

@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { fetchCandles, fetchPrediction, fetchTicker, fetchTradableSymbols, getApiBaseUrl } from "./lib/api";
 import type { CandleGranularity, CandlePoint, Horizon, PredictionResponse, Symbol } from "./types/prediction";
 
-const horizons: Horizon[] = ["5m", "1h", "6h", "12h", "1d", "1w", "1mo", "3mo"];
+const horizons: Horizon[] = ["5m", "1h", "3h", "6h", "12h", "1d", "1w", "1mo", "3mo"];
 const fallbackSymbols: Symbol[] = ["BTC-USD", "ETH-USD", "SOL-USD"];
 const rangeKeys = ["1D", "1W", "1M", "1Y", "MAX"] as const;
 
@@ -238,6 +238,21 @@ function App() {
     const lo = `${result.return_range_min_pct >= 0 ? "+" : ""}${result.return_range_min_pct.toFixed(2)}%`;
     const hi = `${result.return_range_max_pct >= 0 ? "+" : ""}${result.return_range_max_pct.toFixed(2)}%`;
     return `${lo} to ${hi}`;
+  }, [result]);
+
+  const currentPriceLabel = useMemo(() => {
+    if (!result) return "-";
+    return formatCurrency(result.current_price);
+  }, [result]);
+
+  const usdRangeLabel = useMemo(() => {
+    if (!result) return "-";
+    return `${formatCurrency(result.predicted_low_usd)} to ${formatCurrency(result.predicted_high_usd)}`;
+  }, [result]);
+
+  const horizonEndLabel = useMemo(() => {
+    if (!result) return "-";
+    return new Date(result.horizon_end_at).toLocaleString();
   }, [result]);
 
   const watchlist = useMemo(
@@ -772,10 +787,13 @@ function App() {
               {error ? <p className="error">{error}</p> : null}
               {result ? (
                 <div className="result-box">
-                  <p className="signal">{result.direction === "up" ? "Bullish" : "Bearish"}</p>
+                  <p className="signal">{result.market_bias === "bullish" ? "Bullish" : "Bearish"}</p>
                   <p>Confidence: {confidenceLabel}</p>
+                  <p>Current Price: {currentPriceLabel}</p>
                   <p>Predicted Close: {projectedLabel}</p>
+                  <p>Projected USD Range: {usdRangeLabel}</p>
                   <p>Expected Range: {rangeLabel}</p>
+                  <p>Horizon End: {horizonEndLabel}</p>
                   <p>
                     Risk: <span className={result.risk_level === "low" ? "up" : result.risk_level === "medium" ? "muted" : "down"}>{result.risk_level.toUpperCase()}</span>{" "}
                     ({result.risk_score.toFixed(1)}/100)
@@ -851,10 +869,13 @@ function App() {
             {result ? (
               <div className="result-box">
                 <p><strong>Symbol:</strong> {result.symbol}</p>
-                <p><strong>Direction:</strong> {result.direction.toUpperCase()}</p>
+                <p><strong>Direction:</strong> {result.market_bias.toUpperCase()}</p>
                 <p><strong>Confidence:</strong> {confidenceLabel}</p>
+                <p><strong>Current Price:</strong> {currentPriceLabel}</p>
                 <p><strong>Predicted Close:</strong> {projectedLabel}</p>
+                <p><strong>Projected USD Range:</strong> {usdRangeLabel}</p>
                 <p><strong>Expected Range:</strong> {rangeLabel}</p>
+                <p><strong>Horizon End:</strong> {horizonEndLabel}</p>
                 <p><strong>Risk:</strong> {result.risk_level.toUpperCase()} ({result.risk_score.toFixed(1)}/100)</p>
                 <p><strong>Model:</strong> {result.model_version}</p>
                 <p><strong>Generated:</strong> {new Date(result.generated_at).toLocaleString()}</p>

@@ -25,5 +25,6 @@ Default app URL: `http://localhost:5173`
   - indicator toggles (`MA`, `EMA`, and volume area)
   - hover inspection for OHLCV values
 - Dedicated prediction model tab/page
-- Prediction result UI includes risk-aware return range and risk score/level
+- Prediction result UI includes bullish/bearish bias, current price, predicted close, USD range, horizon-end time, and risk score/level
 - Prediction values are backend model-driven when promoted artifacts exist, with automatic fallback continuity
+- Prediction horizons supported in UI: `5m`, `1h`, `3h`, `6h`, `12h`, `1d`, `1w`, `1mo`, `3mo`

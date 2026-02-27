@@ -81,7 +81,7 @@ python scripts/train_all_symbols.py --model-version daily-20260213-020000 --outp
 
 Training targets horizons:
 
-- `5m`, `1h`, `6h`, `12h`, `1d`, `1w`, `1mo`, `3mo`
+- `5m`, `1h`, `3h`, `6h`, `12h`, `1d`, `1w`, `1mo`, `3mo`
 
 Candidate models per symbol+horizon:
 
@@ -89,6 +89,7 @@ Candidate models per symbol+horizon:
 - Classification ensemble: Logistic Regression, RandomForest, ExtraTrees, GradientBoosting, StackingClassifier
 - Regression ensemble: RandomForest, GradientBoosting, HistGradientBoosting, ExtraTrees, StackingRegressor
   Regression target is modeled as `log_return` and transformed back to price with horizon-aware clipping to reduce extreme RMSE outliers.
+  Final regression output uses a validation-optimized blend with persistence (`regression_blend_alpha`) to reduce RMSE drift.
   Per-horizon feature subsets are used (short-horizon microstructure/volatility burst vs long-horizon trend/regime persistence).
 
 Stochastic feature layer (used by all model candidates):
@@ -126,12 +127,18 @@ Promote a trained candidate version:
 python scripts/promote_model.py --candidate daily-20260213-020000 --active daily-20260212-020000 --phase phase1
 ```
 
+To merge newly passing pairs into the existing promoted registry (recommended for targeted retrains):
+
+```bash
+python scripts/promote_model.py --candidate <version> --phase phase3 --merge-existing
+```
+
 Phases:
 
 - `phase1`: activates only `BTC-USD`, `ETH-USD`, `SOL-USD` entries that pass gates
 - `phase2`: activates previous active set + next batch (`--phase2-batch-size`, default 20)
 - `phase3`: activates all passed symbol+horizon entries
-  In bootstrap mode, phase1 additionally restricts promotions to short horizons from `BOOTSTRAP_PHASE1_HORIZONS` (default `5m,1h,6h,12h`).
+  In bootstrap mode, phase1 additionally restricts promotions to short horizons from `BOOTSTRAP_PHASE1_HORIZONS` (default `5m,1h,3h,6h,12h`).
 
 Promotion safety:
 
@@ -142,6 +149,7 @@ Model inference also supports reliability abstention:
 if confidence is below `PREDICTION_CONFIDENCE_MIN_FOR_MODEL` and `PREDICTION_ABSTAIN_TO_FALLBACK=true`,
 the endpoint returns fallback output instead of low-edge model output.
 Inference also uses calibrated per-horizon decision thresholds (not fixed 0.5) and optional regime-routed models when available.
+Inference also applies persisted `regression_blend_alpha` from metrics artifacts.
 
 ## Artifact Layout
 
@@ -169,10 +177,11 @@ Reports:
 - Recommended ingestion depth for training readiness: `INGESTION_LIMIT_PER_SYMBOL=1500`
 - Recommended ingestion depth for training readiness: `INGESTION_LIMIT_PER_SYMBOL=5000`
 - Staged stochastic gate control: `MARTINGALE_GATE_MODE=bootstrap|strict` (default: `bootstrap`)
-- Bootstrap short-horizon promotion set: `BOOTSTRAP_PHASE1_HORIZONS=5m,1h,6h,12h`
+- Bootstrap short-horizon promotion set: `BOOTSTRAP_PHASE1_HORIZONS=5m,1h,3h,6h,12h`
 - Labeling and confidence controls:
   - `CLASSIFICATION_LABEL_MODE=triple_barrier|terminal_direction`
   - `TRIPLE_BARRIER_SIGMA_MULT=1.0`
+  - `REGIME_MODELS_ENABLED=true|false`
   - `HIGH_CONFIDENCE_THRESHOLD=0.62`
   - `PREDICTION_CONFIDENCE_MIN_FOR_MODEL=0.56`
   - `PREDICTION_ABSTAIN_TO_FALLBACK=true`
@@ -227,11 +236,16 @@ Example response fields (abridged):
 ```json
 {
   "direction": "up",
+  "market_bias": "bullish",
   "confidence": 0.71,
+  "current_price": 62123.11,
   "predicted_close": 123.45,
+  "predicted_low_usd": 61220.55,
+  "predicted_high_usd": 62880.77,
   "return_range_min_pct": -4.2,
   "return_range_max_pct": 6.1,
   "risk_score": 48.3,
-  "risk_level": "medium"
+  "risk_level": "medium",
+  "horizon_end_at": "2026-02-27T20:15:00+00:00"
 }
 ```
