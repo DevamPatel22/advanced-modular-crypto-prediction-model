@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Retrain near-pass symbol/horizon pairs and attempt incremental promotion."""
+
 from __future__ import annotations
 
 import argparse
@@ -34,6 +36,7 @@ class PairCandidate:
 
 
 def _candidate_payload(candidate: PairCandidate) -> dict[str, object]:
+    """Internal helper to compute candidate payload."""
     deficit = float(candidate.deficit_score)
     if not math.isfinite(deficit):
         deficit_payload: float | None = None
@@ -50,15 +53,18 @@ def _candidate_payload(candidate: PairCandidate) -> dict[str, object]:
 
 
 def _default_model_version() -> str:
+    """Compute default model version. Internal helper."""
     return datetime.now(tz=UTC).strftime("nearloop-%Y%m%d-%H%M%S")
 
 
 def _parse_symbols(raw: str) -> list[str]:
+    """Parse symbols. Internal helper."""
     values = [item.strip().upper() for item in raw.split(",") if item.strip()]
     return sorted(set(values))
 
 
 def _parse_target_pairs(raw: str) -> list[tuple[str, str]]:
+    """Parse target pairs. Internal helper."""
     out: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for item in raw.split(","):
@@ -79,6 +85,7 @@ def _parse_target_pairs(raw: str) -> list[tuple[str, str]]:
 
 
 def _promoted_pair_set(payload: dict[str, object]) -> set[tuple[str, str]]:
+    """Internal helper to compute promoted pair set."""
     out: set[tuple[str, str]] = set()
     promoted = payload.get("promoted", {})
     if not isinstance(promoted, dict):
@@ -93,11 +100,13 @@ def _promoted_pair_set(payload: dict[str, object]) -> set[tuple[str, str]]:
 
 
 def _ranked_summary_reports(reports_root: Path) -> list[Path]:
+    """Internal helper to compute ranked summary reports."""
     paths = list(reports_root.glob("summary_report_*.json"))
     if not paths:
         return []
 
     def _score(path: Path) -> tuple[int, int, float, int, int]:
+        """Internal helper to compute score."""
         mtime = float(path.stat().st_mtime)
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -125,6 +134,7 @@ def _ranked_summary_reports(reports_root: Path) -> list[Path]:
 
 
 def _to_float(value: object, fallback: float = 0.0) -> float:
+    """Convert to float. Internal helper."""
     try:
         return float(value)
     except Exception:
@@ -132,10 +142,12 @@ def _to_float(value: object, fallback: float = 0.0) -> float:
 
 
 def _deficit_score(delta_f1: float, delta_accuracy: float, delta_rmse: float) -> float:
+    """Internal helper to compute deficit score."""
     return abs(min(delta_f1, 0.0)) + abs(min(delta_accuracy, 0.0)) + abs(min(delta_rmse, 0.0))
 
 
 def _extract_candidates_from_results(payload: dict[str, object], report_name: str) -> list[PairCandidate]:
+    """Internal helper to compute extract candidates from results."""
     out: list[PairCandidate] = []
     results = payload.get("results", [])
     if not isinstance(results, list):
@@ -174,6 +186,7 @@ def _extract_candidates_from_results(payload: dict[str, object], report_name: st
 
 
 def _extract_candidates_from_near_pass(payload: dict[str, object], report_name: str) -> list[PairCandidate]:
+    """Internal helper to compute extract candidates from near pass."""
     out: list[PairCandidate] = []
     items = payload.get("near_pass_candidates", [])
     if not isinstance(items, list):
@@ -204,6 +217,7 @@ def _extract_candidates_from_near_pass(payload: dict[str, object], report_name: 
 
 
 def _extract_candidates_from_symbol_tree(payload: dict[str, object], report_name: str) -> list[PairCandidate]:
+    """Internal helper to compute extract candidates from symbol tree."""
     out: list[PairCandidate] = []
     symbols = payload.get("symbols", {})
     if not isinstance(symbols, dict):
@@ -250,6 +264,7 @@ def _rank_candidates(
     allowed_symbols: set[str],
     promoted_pairs: set[tuple[str, str]],
 ) -> list[PairCandidate]:
+    """Internal helper to compute rank candidates."""
     candidates = (
         _extract_candidates_from_results(payload, report_name)
         + _extract_candidates_from_near_pass(payload, report_name)
@@ -276,6 +291,8 @@ def _fallback_pairs(
     promoted_pairs: set[tuple[str, str]],
     existing: set[tuple[str, str]],
 ) -> list[PairCandidate]:
+    # Fallback list ensures the loop still has work when near-pass coverage is sparse.
+    """Internal helper to compute fallback pairs."""
     horizon_priority = ["12h", "6h", "3h", "1h", "5m"]
     out: list[PairCandidate] = []
     for symbol in symbols:
@@ -297,10 +314,13 @@ def _fallback_pairs(
 
 
 def _run_command(args: list[str]) -> subprocess.CompletedProcess[str]:
+    # Central subprocess helper keeps capture/return handling consistent.
+    """Run command. Internal helper."""
     return subprocess.run(args, cwd=PROJECT_ROOT, text=True, capture_output=True, check=False)
 
 
 def _artifact_bundle_paths(models_root: Path, model_version: str, symbol: str, horizon: str) -> dict[str, Path]:
+    """Internal helper to compute artifact bundle paths."""
     symbol_dir = models_root / model_version / symbol
     return {
         "classification": symbol_dir / f"cls_{horizon}.joblib",
@@ -311,6 +331,7 @@ def _artifact_bundle_paths(models_root: Path, model_version: str, symbol: str, h
 
 
 def _artifact_bundle_exists(models_root: Path, model_version: str, symbol: str, horizon: str) -> bool:
+    """Internal helper to compute artifact bundle exists."""
     paths = _artifact_bundle_paths(models_root, model_version, symbol, horizon)
     return all(path.exists() for path in paths.values())
 
@@ -322,6 +343,7 @@ def _copy_artifact_bundle(
     symbol: str,
     horizon: str,
 ) -> bool:
+    """Copy artifact bundle. Internal helper."""
     source_paths = _artifact_bundle_paths(models_root, source_model_version, symbol, horizon)
     target_paths = _artifact_bundle_paths(models_root, target_model_version, symbol, horizon)
     if not all(path.exists() for path in source_paths.values()):
@@ -334,6 +356,7 @@ def _copy_artifact_bundle(
 
 
 def main() -> None:
+    """Run the script entrypoint."""
     parser = argparse.ArgumentParser(description="Continuously retrain near-promotion pairs and promote merged winners")
     parser.add_argument("--model-version", default=_default_model_version(), help="Candidate model version")
     parser.add_argument("--phase", choices=["phase1", "phase2", "phase3"], default="phase3", help="Promotion phase")
@@ -436,6 +459,7 @@ def main() -> None:
     )
 
     if target_pairs:
+        # Manual mode focuses training on explicitly requested pair(s).
         selected = [
             PairCandidate(
                 symbol=symbol,
@@ -499,6 +523,7 @@ def main() -> None:
 
     carry_forward_pairs: list[dict[str, object]] = []
     for symbol, horizon in sorted(promoted_pairs):
+        # Keep already-promoted pairs available in the new candidate version.
         if _artifact_bundle_exists(models_root, args.model_version, symbol, horizon):
             carry_forward_pairs.append(
                 {

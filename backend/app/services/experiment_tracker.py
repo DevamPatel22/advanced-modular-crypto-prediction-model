@@ -1,3 +1,5 @@
+"""Append-only JSONL experiment/event logger used by training and promotion scripts."""
+
 from __future__ import annotations
 
 import json
@@ -6,11 +8,13 @@ from pathlib import Path
 
 
 def _events_path() -> Path:
+    """Internal helper to compute events path."""
     root = Path(__file__).resolve().parents[2]
     return root / "reports" / "experiment_events.jsonl"
 
 
 def log_experiment_event(event_type: str, payload: dict[str, object]) -> Path:
+    """Compute log experiment event."""
     path = _events_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     event = {

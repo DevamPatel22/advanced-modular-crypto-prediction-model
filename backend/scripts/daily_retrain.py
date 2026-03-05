@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Run ingestion, quality gate, training, and promotion as one retrain pipeline."""
+
 from __future__ import annotations
 
 import argparse
@@ -20,14 +22,18 @@ from app.services.model_registry import ModelRegistry
 
 
 def _run_command(args: list[str]) -> subprocess.CompletedProcess[str]:
+    # Helper to keep all child script executions consistent and reportable.
+    """Run command. Internal helper."""
     return subprocess.run(args, cwd=PROJECT_ROOT, text=True, capture_output=True, check=False)
 
 
 def _today_version() -> str:
+    """Internal helper to compute today version."""
     return datetime.now(tz=UTC).strftime("daily-%Y%m%d-%H%M%S")
 
 
 def main() -> None:
+    """Run the script entrypoint."""
     parser = argparse.ArgumentParser(description="Run daily ingest -> train -> promote pipeline")
     parser.add_argument("--model-version", default=_today_version(), help="Candidate model version")
     parser.add_argument("--phase", choices=["phase1", "phase2", "phase3"], default="phase3", help="Promotion phase")
@@ -84,6 +90,7 @@ def main() -> None:
             run_report["steps"].append({"step": "ingestion", "status": "failed", "error": str(exc)})
 
     if args.enforce_data_quality:
+        # Gate retraining when source data quality does not satisfy minimum standards.
         quality_cmd = [
             sys.executable,
             "scripts/data_quality_report.py",
@@ -141,6 +148,7 @@ def main() -> None:
             raise SystemExit(1)
 
     train_output = f"{args.output_prefix}/summary_report_{args.model_version}.json"
+    # Train a candidate version first; promotion is handled separately below.
     train_cmd = [
         sys.executable,
         "scripts/train_all_symbols.py",
@@ -173,6 +181,7 @@ def main() -> None:
         raise SystemExit(1)
 
     promote_output = f"{args.output_prefix}/promotion_report_{args.model_version}.json"
+    # Promotion applies phase rules and only activates pairs that pass strict gates.
     promote_cmd = [
         sys.executable,
         "scripts/promote_model.py",

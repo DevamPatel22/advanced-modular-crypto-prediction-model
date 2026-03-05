@@ -1,3 +1,5 @@
+"""Feature engineering definitions and horizon-specific feature selection."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -139,6 +141,7 @@ HORIZON_TO_DATA_WINDOW: dict[str, tuple[str, int]] = {
 
 
 def _rsi(close: pd.Series, period: int = 14) -> pd.Series:
+    """Internal helper to compute rsi."""
     delta = close.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -150,12 +153,14 @@ def _rsi(close: pd.Series, period: int = 14) -> pd.Series:
 
 def _encode_state(ret_1: pd.Series, flat_threshold: float = 0.0015) -> pd.Series:
     # -1 => down, 0 => flat, +1 => up
+    """Encode state. Internal helper."""
     states = pd.Series(np.where(ret_1 > flat_threshold, 1, np.where(ret_1 < -flat_threshold, -1, 0)), index=ret_1.index)
     return states
 
 
 def _markov_transition_features(states: pd.Series) -> pd.DataFrame:
     # Online 3-state transition estimator using only past transitions.
+    """Internal helper to compute markov transition features."""
     mapping = {-1: 0, 0: 1, 1: 2}
     encoded = states.map(mapping).to_numpy(dtype=float)
     n = len(encoded)
@@ -185,6 +190,7 @@ def _markov_transition_features(states: pd.Series) -> pd.DataFrame:
 
 
 def build_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Build features."""
     frame = df.copy()
 
     # Technical/momentum/volatility/volume feature set.
@@ -261,6 +267,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def feature_columns_for_horizon(horizon: str) -> list[str]:
+    """Compute feature columns for horizon."""
     if horizon in SHORT_HORIZONS:
         return SHORT_FEATURE_COLUMNS
     if horizon in LONG_HORIZONS:

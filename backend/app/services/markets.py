@@ -1,3 +1,5 @@
+"""Tradable symbol discovery service with caching and resilient fallback behavior."""
+
 from __future__ import annotations
 
 import time
@@ -20,6 +22,7 @@ _cache: dict[str, SymbolCache] = {}
 
 
 def _fallback_symbols(quote: str) -> list[MarketSymbol]:
+    """Internal helper to compute fallback symbols."""
     base = ["BTC", "ETH", "SOL", "LTC", "XRP", "ADA", "DOGE"]
     return [
         MarketSymbol(
@@ -33,6 +36,7 @@ def _fallback_symbols(quote: str) -> list[MarketSymbol]:
 
 
 async def fetch_symbols_by_quote(quote: str, limit: int = 300) -> list[MarketSymbol]:
+    """Fetch symbols by quote."""
     settings = get_settings()
     normalized_quote = quote.upper().strip()
     now = time.time()
@@ -94,6 +98,7 @@ async def fetch_symbols_by_quote(quote: str, limit: int = 300) -> list[MarketSym
 
 
 async def is_tradable_symbol(symbol: str, quote: str = "USD") -> bool:
+    """Return whether tradable symbol holds."""
     normalized = symbol.upper().strip()
     universe = await fetch_symbols_by_quote(quote=quote, limit=2000)
     return any(item.symbol == normalized for item in universe)

@@ -1,3 +1,5 @@
+"""Market data endpoints (candles, ticker, websocket stream)."""
+
 import asyncio
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -17,6 +19,7 @@ async def candles(
     limit: int = Query(default=200, ge=1, le=2000),
     refresh: bool = Query(default=False),
 ) -> CandleSeriesResponse:
+    """Compute candles."""
     if not await is_tradable_symbol(symbol=symbol, quote="USD"):
         raise HTTPException(status_code=400, detail=f"{symbol.upper()} is not a supported US-tradable USD pair")
     try:
@@ -39,6 +42,7 @@ async def candles(
 async def ticker(
     symbol: str = Query(..., min_length=5, max_length=24, pattern=r"^[A-Z0-9]+-[A-Z0-9]+$"),
 ) -> TickerResponse:
+    """Compute ticker."""
     if not await is_tradable_symbol(symbol=symbol, quote="USD"):
         raise HTTPException(status_code=400, detail=f"{symbol.upper()} is not a supported US-tradable USD pair")
     try:
@@ -52,6 +56,7 @@ async def ticker_stream(
     websocket: WebSocket,
     symbol: str = Query(..., min_length=5, max_length=24, pattern=r"^[A-Z0-9]+-[A-Z0-9]+$"),
 ):
+    """Compute ticker stream."""
     if not await is_tradable_symbol(symbol=symbol, quote="USD"):
         await websocket.accept()
         await websocket.close(code=1008, reason="unsupported_symbol")

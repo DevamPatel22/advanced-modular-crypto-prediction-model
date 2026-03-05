@@ -1,9 +1,9 @@
-from contextlib import asynccontextmanager
-import asyncio
-
 """Copyright (c) 2026 Devam Patel. All rights reserved.
 Proprietary software. Unauthorized copying, modification, distribution, or use is prohibited.
 """
+
+from contextlib import asynccontextmanager
+import asyncio
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,10 +22,13 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Ensure SQLite schema/tables exist before serving traffic.
+    """Compute lifespan."""
     init_market_data_db()
     stop_event = asyncio.Event()
     ingestion_task: asyncio.Task[None] | None = None
     if settings.ingestion_enabled:
+        # Ingestion loop is a background task tied to app lifecycle.
         ingestion_task = asyncio.create_task(run_ingestion_loop(stop_event))
     try:
         yield
@@ -64,6 +67,7 @@ app.include_router(risk_router, prefix=settings.api_prefix)
 
 @app.get("/")
 def root() -> dict[str, str]:
+    """Compute root."""
     return {
         "service": settings.app_name,
         "status": "running",

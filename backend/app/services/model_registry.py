@@ -1,3 +1,5 @@
+"""Registry wrapper for active model version, promoted pairs, and rollback history."""
+
 from __future__ import annotations
 
 import json
@@ -9,11 +11,13 @@ from app.config import get_settings
 
 class ModelRegistry:
     def __init__(self, models_root: Path | None = None, registry_path: Path | None = None) -> None:
+        """Initialize ModelRegistry state."""
         settings = get_settings()
         self.models_root = models_root or Path(settings.model_artifacts_root)
         self.registry_path = registry_path or Path(settings.model_registry_path)
 
     def _default_registry(self) -> dict[str, object]:
+        """Compute default registry. Internal helper."""
         settings = get_settings()
         return {
             "active_model_version": settings.default_model_version,
@@ -23,6 +27,7 @@ class ModelRegistry:
         }
 
     def _history(self, payload: dict[str, object]) -> list[dict[str, object]]:
+        """Internal helper to compute history."""
         history = payload.get("history", [])
         if not isinstance(history, list):
             return []
@@ -33,6 +38,7 @@ class ModelRegistry:
         return normalized
 
     def read(self) -> dict[str, object]:
+        """Compute read."""
         if not self.registry_path.exists():
             return self._default_registry()
         try:
@@ -44,16 +50,19 @@ class ModelRegistry:
             return self._default_registry()
 
     def write(self, payload: dict[str, object]) -> None:
+        """Compute write."""
         payload["updated_at"] = datetime.now(tz=UTC).isoformat()
         self.registry_path.parent.mkdir(parents=True, exist_ok=True)
         self.registry_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def get_active_model_version(self) -> str:
+        """Get active model version."""
         settings = get_settings()
         payload = self.read()
         return str(payload.get("active_model_version") or settings.default_model_version)
 
     def is_promoted(self, symbol: str, horizon: str) -> bool:
+        """Return whether promoted holds."""
         payload = self.read()
         promoted = payload.get("promoted", {})
         if not isinstance(promoted, dict):
@@ -64,6 +73,8 @@ class ModelRegistry:
         return bool(symbol_map.get(horizon))
 
     def resolve_artifacts(self, symbol: str, horizon: str) -> dict[str, Path] | None:
+        # Only promoted pairs are allowed to serve model-backed inference.
+        """Resolve artifacts."""
         if not self.is_promoted(symbol, horizon):
             return None
 
@@ -80,6 +91,8 @@ class ModelRegistry:
         return None
 
     def promote_candidate(self, candidate_version: str, promoted: dict[str, dict[str, bool]]) -> dict[str, object]:
+        # Promotion updates active version and stores reversible lineage in history.
+        """Promote candidate."""
         payload = self.read()
         previous_active = str(payload.get("active_model_version") or "")
         previous_promoted = payload.get("promoted", {})
@@ -106,6 +119,8 @@ class ModelRegistry:
         promoted: dict[str, dict[str, bool]],
         reason: str,
     ) -> dict[str, object]:
+        # Rollback keeps full provenance of from/to state for auditability.
+        """Rollback to."""
         payload = self.read()
         previous_active = str(payload.get("active_model_version") or "")
         previous_promoted = payload.get("promoted", {})

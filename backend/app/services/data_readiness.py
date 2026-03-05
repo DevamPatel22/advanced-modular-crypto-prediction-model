@@ -1,3 +1,5 @@
+"""Data quality and source-health accessors used by health endpoints and guards."""
+
 from __future__ import annotations
 
 import json
@@ -9,15 +11,18 @@ from app.config import get_settings
 
 
 def _reports_root() -> Path:
+    """Internal helper to compute reports root."""
     return Path(__file__).resolve().parents[2] / "reports"
 
 
 def _db_path() -> Path:
+    """Internal helper to compute database path."""
     settings = get_settings()
     return Path(settings.market_data_sqlite_path)
 
 
 def _safe_load_json(path: Path) -> dict[str, object] | None:
+    """Internal helper to compute safe load JSON."""
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
@@ -26,6 +31,7 @@ def _safe_load_json(path: Path) -> dict[str, object] | None:
 
 
 def latest_data_quality_report() -> dict[str, object]:
+    """Compute latest data quality report."""
     root = _reports_root()
     candidates = sorted(
         list(root.glob("data_quality_*.json")) + list(root.glob("data_quality_report*.json")),
@@ -59,6 +65,7 @@ def latest_data_quality_report() -> dict[str, object]:
 
 
 def source_health_summary(hours: int = 24) -> dict[str, object]:
+    """Compute source health summary."""
     db_path = _db_path()
     if not db_path.exists():
         return {

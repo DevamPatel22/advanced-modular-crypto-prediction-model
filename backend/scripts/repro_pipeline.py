@@ -21,10 +21,13 @@ from app.services.experiment_tracker import log_experiment_event
 
 
 def _run_command(args: list[str]) -> subprocess.CompletedProcess[str]:
+    # Keep subprocess behavior consistent for deterministic run bundles.
+    """Run command. Internal helper."""
     return subprocess.run(args, cwd=BACKEND_ROOT, text=True, capture_output=True, check=False)
 
 
 def _sha256_file(path: Path) -> str:
+    """Internal helper to compute sha256 file."""
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         while True:
@@ -36,6 +39,7 @@ def _sha256_file(path: Path) -> str:
 
 
 def _git_commit() -> str | None:
+    """Internal helper to compute git commit."""
     proc = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, text=True, capture_output=True, check=False)
     if proc.returncode != 0:
         return None
@@ -43,10 +47,12 @@ def _git_commit() -> str | None:
 
 
 def _default_model_version() -> str:
+    """Compute default model version. Internal helper."""
     return datetime.now(tz=UTC).strftime("repro-%Y%m%d-%H%M%S")
 
 
 def _as_report_file(value: object) -> Path | None:
+    """Return report file. Internal helper."""
     if not isinstance(value, str) or not value:
         return None
     path = Path(value)
@@ -56,6 +62,7 @@ def _as_report_file(value: object) -> Path | None:
 
 
 def main() -> None:
+    """Run the script entrypoint."""
     parser = argparse.ArgumentParser(description="Run reproducible ingest/train/promote/guard pipeline")
     parser.add_argument("--model-version", default=_default_model_version(), help="Candidate model version")
     parser.add_argument("--phase", choices=["phase1", "phase2", "phase3"], default="phase3")
@@ -150,6 +157,7 @@ def main() -> None:
         "rollback_guard_report": _as_report_file(rollback_json.get("report")),
     }
     checksums: dict[str, dict[str, object]] = {}
+    # Hash reports so the bundle can prove exact artifacts used/generated in this run.
     for name, path in report_paths.items():
         if path is None or not path.exists() or not path.is_file():
             continue

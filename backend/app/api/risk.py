@@ -1,3 +1,5 @@
+"""Risk analytics endpoints used by portfolio/risk controls."""
+
 from fastapi import APIRouter
 
 from app.schemas.risk import (
@@ -13,6 +15,7 @@ router = APIRouter(prefix="/risk", tags=["risk"])
 
 @router.post("/portfolio-snapshot", response_model=PortfolioRiskResponse)
 def portfolio_snapshot(payload: PortfolioRiskRequest) -> PortfolioRiskResponse:
+    """Compute portfolio snapshot."""
     result = portfolio_risk_snapshot(
         returns=payload.returns,
         confidence_level=payload.confidence_level,
@@ -23,6 +26,7 @@ def portfolio_snapshot(payload: PortfolioRiskRequest) -> PortfolioRiskResponse:
 
 @router.post("/limit-check", response_model=RiskLimitCheckResponse)
 def limit_check(payload: RiskLimitCheckRequest) -> RiskLimitCheckResponse:
+    """Compute limit check."""
     result = apply_risk_limits(
         proposed_weights=payload.proposed_weights,
         current_weights=payload.current_weights,

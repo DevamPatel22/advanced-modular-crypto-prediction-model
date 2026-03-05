@@ -1,3 +1,5 @@
+"""Health and operations status endpoints for service/runtime visibility."""
+
 from fastapi import APIRouter, Query
 
 from app.config import get_settings
@@ -8,6 +10,7 @@ router = APIRouter(tags=["health"])
 
 @router.get("/health")
 def health_check() -> dict[str, str]:
+    """Compute health check."""
     settings = get_settings()
     return {
         "status": "ok",
@@ -19,6 +22,7 @@ def health_check() -> dict[str, str]:
 
 @router.get("/health/data-readiness")
 def health_data_readiness() -> dict[str, object]:
+    """Compute health data readiness."""
     quality = latest_data_quality_report()
     return {
         "status": "ok",
@@ -28,6 +32,7 @@ def health_data_readiness() -> dict[str, object]:
 
 @router.get("/health/source-health")
 def health_source_health(hours: int = Query(default=24, ge=1, le=168)) -> dict[str, object]:
+    """Compute health source health."""
     summary = source_health_summary(hours=hours)
     return {
         "status": "ok",

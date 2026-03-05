@@ -40,14 +40,17 @@ DEFAULT_MAX_STALE_STEPS = {
 
 
 def _parse_csv(raw: str) -> list[str]:
+    """Parse CSV. Internal helper."""
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
 def _parse_symbols(raw: str) -> list[str]:
+    """Parse symbols. Internal helper."""
     return sorted(set(item.upper() for item in _parse_csv(raw)))
 
 
 def _parse_granularities(raw: str) -> list[str]:
+    """Parse granularities. Internal helper."""
     out: list[str] = []
     for granularity in _parse_csv(raw):
         if granularity in GRANULARITY_TO_SECONDS:
@@ -56,6 +59,7 @@ def _parse_granularities(raw: str) -> list[str]:
 
 
 def _parse_int_map(raw: str, fallback: dict[str, int]) -> dict[str, int]:
+    """Parse int map. Internal helper."""
     parsed = dict(fallback)
     if not raw.strip():
         return parsed
@@ -74,11 +78,13 @@ def _parse_int_map(raw: str, fallback: dict[str, int]) -> dict[str, int]:
 
 
 def _db_path() -> Path:
+    """Internal helper to compute database path."""
     settings = get_settings()
     return Path(settings.market_data_sqlite_path)
 
 
 def _query_timestamps(conn: sqlite3.Connection, symbol: str, granularity: str) -> list[int]:
+    """Internal helper to compute query timestamps."""
     rows = conn.execute(
         """
         SELECT start_time
@@ -99,6 +105,7 @@ def _pair_quality(
     max_stale_steps: int,
     max_gap_ratio: float,
 ) -> dict[str, object]:
+    """Internal helper to compute pair quality."""
     now_ts = int(datetime.now(tz=UTC).timestamp())
     step_seconds = GRANULARITY_TO_SECONDS[granularity]
     row_count = len(timestamps)
@@ -157,6 +164,7 @@ def _pair_quality(
 
 
 def main() -> None:
+    """Run the script entrypoint."""
     parser = argparse.ArgumentParser(description="Generate data quality report for market candle history")
     parser.add_argument("--symbols", default="", help="Comma-separated symbols. Defaults to SUPPORTED_SYMBOLS.")
     parser.add_argument(

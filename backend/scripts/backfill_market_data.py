@@ -31,14 +31,17 @@ DEFAULT_TARGET_ROWS = {
 
 
 def _parse_csv(raw: str) -> list[str]:
+    """Parse CSV. Internal helper."""
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
 def _parse_symbols(raw: str) -> list[str]:
+    """Parse symbols. Internal helper."""
     return sorted(set(item.upper() for item in _parse_csv(raw)))
 
 
 def _parse_granularities(raw: str) -> list[str]:
+    """Parse granularities. Internal helper."""
     out: list[str] = []
     for value in _parse_csv(raw):
         if value in GRANULARITY_TO_SECONDS:
@@ -47,6 +50,7 @@ def _parse_granularities(raw: str) -> list[str]:
 
 
 def _parse_int_map(raw: str, fallback: dict[str, int]) -> dict[str, int]:
+    """Parse int map. Internal helper."""
     parsed = dict(fallback)
     if not raw.strip():
         return parsed
@@ -65,11 +69,13 @@ def _parse_int_map(raw: str, fallback: dict[str, int]) -> dict[str, int]:
 
 
 def _db_path() -> Path:
+    """Internal helper to compute database path."""
     settings = get_settings()
     return Path(settings.market_data_sqlite_path)
 
 
 def _row_count(conn: sqlite3.Connection, symbol: str, granularity: str) -> int:
+    """Internal helper to compute row count."""
     row = conn.execute(
         """
         SELECT COUNT(*)
@@ -88,6 +94,7 @@ async def _run_backfill(
     max_passes: int,
     sleep_ms: int,
 ) -> dict[str, object]:
+    """Run backfill. Internal helper."""
     db_path = _db_path()
     if not db_path.exists():
         raise RuntimeError(f"Market data DB not found: {db_path}")
@@ -215,6 +222,7 @@ async def _run_backfill(
 
 
 def main() -> None:
+    """Run the script entrypoint."""
     parser = argparse.ArgumentParser(description="Backfill market candle data to target row depth")
     parser.add_argument("--symbols", default="", help="Comma-separated symbol list. Defaults to SUPPORTED_SYMBOLS.")
     parser.add_argument(

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Promote a candidate model version into the active registry using phase policies."""
+
 from __future__ import annotations
 
 import argparse
@@ -17,6 +19,7 @@ from app.config import get_settings
 
 
 def _read_json(path: Path) -> dict[str, object] | None:
+    """Internal helper to compute read JSON."""
     if not path.exists():
         return None
     try:
@@ -29,6 +32,7 @@ def _read_json(path: Path) -> dict[str, object] | None:
 
 
 def main() -> None:
+    """Run the script entrypoint."""
     parser = argparse.ArgumentParser(description="Promote candidate model version to active registry")
     parser.add_argument("--candidate", required=True, help="Candidate model version name")
     parser.add_argument("--active", default=None, help="Current active version (optional check)")
@@ -80,6 +84,7 @@ def main() -> None:
 
         for metrics_file in sorted(symbol_dir.glob("metrics_*.json")):
             horizon = metrics_file.stem.replace("metrics_", "")
+            # Phase-1 bootstrap intentionally limits early rollout to selected horizons.
             if args.phase == "phase1" and horizon not in bootstrap_horizons:
                 continue
             payload = _read_json(metrics_file)
@@ -119,6 +124,7 @@ def main() -> None:
         promoted = passed_by_symbol
 
     if args.merge_existing:
+        # Preserve already promoted pairs while adding newly qualified ones.
         existing_promoted = registry.read().get("promoted", {})
         merged: dict[str, dict[str, bool]] = {}
         if isinstance(existing_promoted, dict):

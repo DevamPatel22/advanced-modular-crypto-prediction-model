@@ -157,6 +157,7 @@ class ClassifierValidationCandidate:
 
 class ProbabilityBlendClassifier:
     def __init__(self, models: list[object], weights: list[float]) -> None:
+        """Initialize ProbabilityBlendClassifier state."""
         if len(models) != len(weights) or not models:
             raise ValueError("models and weights must have matching non-zero length")
         weights_arr = np.asarray(weights, dtype=float)
@@ -167,6 +168,7 @@ class ProbabilityBlendClassifier:
         self.weights = (weights_arr / total).tolist()
 
     def predict_proba(self, x: pd.DataFrame) -> np.ndarray:
+        """Compute predict proba."""
         prob_up = np.zeros(len(x), dtype=float)
         for model, weight in zip(self.models, self.weights):
             prob_up += float(weight) * np.asarray(model.predict_proba(x)[:, 1], dtype=float)
@@ -174,6 +176,7 @@ class ProbabilityBlendClassifier:
         return np.column_stack([1.0 - prob_up, prob_up])
 
     def predict(self, x: pd.DataFrame) -> np.ndarray:
+        """Compute predict."""
         return (self.predict_proba(x)[:, 1] >= 0.5).astype(int)
 
 
@@ -185,6 +188,7 @@ def _triple_barrier_labels(
     steps_ahead: int,
     sigma_mult: float,
 ) -> np.ndarray:
+    """Internal helper to compute triple barrier labels."""
     labels = np.full(close.shape[0], np.nan, dtype=float)
     if steps_ahead <= 0:
         return labels
@@ -224,17 +228,20 @@ def _triple_barrier_labels(
 
 
 def _database_path() -> Path:
+    """Internal helper to compute database path."""
     settings = get_settings()
     return Path(settings.market_data_sqlite_path)
 
 
 def _connect() -> sqlite3.Connection:
+    """Internal helper to compute connect."""
     connection = sqlite3.connect(_database_path())
     connection.row_factory = sqlite3.Row
     return connection
 
 
 def load_candles(symbol: str, granularity: str) -> pd.DataFrame:
+    """Load candles."""
     try:
         with _connect() as conn:
             rows = conn.execute(
@@ -260,6 +267,7 @@ def load_candles(symbol: str, granularity: str) -> pd.DataFrame:
 
 
 def list_symbols_with_any_candles(min_rows: int = 100) -> list[str]:
+    """List symbols with any candles."""
     with _connect() as conn:
         rows = conn.execute(
             """
@@ -275,11 +283,13 @@ def list_symbols_with_any_candles(min_rows: int = 100) -> list[str]:
 
 
 def _mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Internal helper to compute MAPE."""
     denom = np.clip(np.abs(y_true), 1e-12, None)
     return float(np.mean(np.abs((y_true - y_pred) / denom)))
 
 
 def _split_indices(length: int) -> tuple[int, int]:
+    """Internal helper to compute split indices."""
     train_end = int(length * 0.7)
     val_end = int(length * 0.85)
     return train_end, val_end
@@ -291,6 +301,7 @@ def _purged_split_frames(
     val_end: int,
     steps_ahead: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Internal helper to compute purged split frames."""
     purge = max(int(steps_ahead), 1)
     train_raw = enriched.iloc[:train_end]
     val_raw = enriched.iloc[train_end:val_end]
@@ -320,6 +331,7 @@ def _split_leakage_diagnostic(
     test_df: pd.DataFrame,
     steps_ahead: int,
 ) -> dict[str, object]:
+    """Internal helper to compute split leakage diagnostic."""
     if train_df.empty or val_df.empty or test_df.empty:
         return {
             "pass": False,
@@ -356,21 +368,25 @@ def _split_leakage_diagnostic(
 
 
 def min_samples_for_horizon(horizon: str) -> int:
+    """Compute min samples for horizon."""
     return int(HORIZON_MIN_SAMPLES.get(horizon, MIN_SAMPLES))
 
 
 def clip_log_return_predictions(values: np.ndarray, horizon: str) -> np.ndarray:
+    """Compute clip log return predictions."""
     clip_value = float(HORIZON_LOG_RETURN_CLIP.get(horizon, 1.0))
     return np.clip(values, -clip_value, clip_value)
 
 
 def residual_clip_abs_from_close(current_close: np.ndarray | float, horizon: str) -> np.ndarray:
+    """Compute residual clip abs from close."""
     clip_value = float(HORIZON_LOG_RETURN_CLIP.get(horizon, 1.0))
     close_array = np.asarray(current_close, dtype=float)
     return np.maximum(close_array * (math.exp(clip_value) - 1.0), 1e-8)
 
 
 def _recent_sample_weights(length: int, min_weight: float = 0.35) -> np.ndarray:
+    """Internal helper to compute recent sample weights."""
     if length <= 1:
         return np.ones(max(length, 1), dtype=float)
     min_weight = float(np.clip(min_weight, 0.05, 1.0))
@@ -384,6 +400,7 @@ def regression_output_to_close(
     horizon: str,
     regression_target: str,
 ) -> np.ndarray:
+    """Compute regression output to close."""
     raw = np.asarray(raw_prediction, dtype=float)
     current = np.asarray(current_close, dtype=float)
     if regression_target == "log_return":
@@ -404,6 +421,7 @@ def apply_directional_tilt_to_close(
     horizon: str,
     gamma: float,
 ) -> np.ndarray:
+    """Apply directional tilt to close."""
     pred = np.asarray(predicted_close, dtype=float)
     current = np.asarray(current_close, dtype=float)
     if pred.size == 0:
@@ -428,6 +446,7 @@ def apply_directional_tilt_to_close(
 
 
 def resolve_horizon_data(symbol: str, spec: HorizonSpec, min_samples: int | None = None) -> tuple[str, int, pd.DataFrame] | None:
+    """Resolve horizon data."""
     required = min_samples if min_samples is not None else min_samples_for_horizon(spec.label)
     for granularity, steps in spec.candidates:
         candidate = load_candles(symbol, granularity)
@@ -437,12 +456,14 @@ def resolve_horizon_data(symbol: str, spec: HorizonSpec, min_samples: int | None
 
 
 def _prepare_supervised(df: pd.DataFrame, horizon: str, steps_ahead: int, min_samples: int) -> tuple[pd.DataFrame, SplitData] | None:
+    """Internal helper to compute prepare supervised."""
     settings = get_settings()
     selected_features = feature_columns_for_horizon(horizon)
     enriched = build_features(df)
     enriched["target_close"] = enriched["close"].shift(-steps_ahead)
     enriched["target_log_return"] = np.log((enriched["target_close"] + 1e-12) / (enriched["close"] + 1e-12))
     if settings.classification_label_mode.strip().lower() == "triple_barrier":
+        # Triple-barrier labels are more robust in volatile regimes than simple terminal direction.
         labels = _triple_barrier_labels(
             close=enriched["close"].to_numpy(dtype=float),
             high=enriched["high"].to_numpy(dtype=float),
@@ -462,6 +483,7 @@ def _prepare_supervised(df: pd.DataFrame, horizon: str, steps_ahead: int, min_sa
         return None
 
     train_end, val_end = _split_indices(len(enriched))
+    # Purged splits reduce leakage from overlapping forecast windows across boundaries.
     train_df, val_df, test_df = _purged_split_frames(
         enriched=enriched,
         train_end=train_end,
@@ -508,6 +530,7 @@ def _prepare_supervised(df: pd.DataFrame, horizon: str, steps_ahead: int, min_sa
 
 
 def _classification_candidates() -> list[tuple[str, Pipeline]]:
+    """Internal helper to compute classification candidates."""
     base: list[tuple[str, Pipeline]] = [
         (
             "logistic_regression",
@@ -687,6 +710,7 @@ def _classification_candidates() -> list[tuple[str, Pipeline]]:
 
 
 def _regression_candidates() -> list[tuple[str, Pipeline]]:
+    """Internal helper to compute regression candidates."""
     base: list[tuple[str, Pipeline]] = [
         (
             "random_forest_regressor",
@@ -887,6 +911,7 @@ def _regression_candidates() -> list[tuple[str, Pipeline]]:
 
 
 def _class_balance_sample_weight(y: pd.Series, down_weight_boost: float = 1.0) -> np.ndarray:
+    """Internal helper to compute class balance sample weight."""
     values = y.to_numpy(dtype=int)
     total = len(values)
     positive = max(int(np.sum(values == 1)), 1)
@@ -899,6 +924,7 @@ def _class_balance_sample_weight(y: pd.Series, down_weight_boost: float = 1.0) -
 
 
 def _down_weight_boost_candidates(y: pd.Series) -> list[float]:
+    """Internal helper to compute down weight boost candidates."""
     values = y.to_numpy(dtype=int)
     if values.size == 0:
         return [1.0]
@@ -915,6 +941,7 @@ def _down_weight_boost_candidates(y: pd.Series) -> list[float]:
 
 
 def _fit_pipeline_with_optional_weight(model: Pipeline, x: pd.DataFrame, y: pd.Series, sample_weight: np.ndarray | None) -> None:
+    """Internal helper to compute fit pipeline with optional weight."""
     if sample_weight is None:
         model.fit(x, y)
         return
@@ -926,6 +953,7 @@ def _fit_pipeline_with_optional_weight(model: Pipeline, x: pd.DataFrame, y: pd.S
 
 
 def _best_threshold_for_f1(y_true: np.ndarray, y_prob: np.ndarray) -> tuple[float, float, float, dict[str, object]]:
+    """Internal helper to compute best threshold for F1."""
     settings = get_settings()
     if bool(settings.walk_forward_threshold_enabled):
         threshold, wf_payload = choose_threshold_walk_forward(
@@ -980,12 +1008,14 @@ def _best_threshold_for_f1(y_true: np.ndarray, y_prob: np.ndarray) -> tuple[floa
 
 
 def _select_best_classifier(split: SplitData) -> CandidateResult:
+    """Select best classifier. Internal helper."""
     best: CandidateResult | None = None
     val_candidates: list[ClassifierValidationCandidate] = []
     val_true = split.y_val_cls.to_numpy(dtype=int)
     val_baseline_pred = np.ones_like(val_true)
     val_baseline_f1 = float(f1_score(val_true, val_baseline_pred, zero_division=0))
     val_baseline_accuracy = float(accuracy_score(val_true, val_baseline_pred))
+    # Search both model family and class-imbalance weighting to optimize strict gate margins.
     for down_weight_boost in _down_weight_boost_candidates(split.y_train_cls):
         sample_weight = _class_balance_sample_weight(split.y_train_cls, down_weight_boost=down_weight_boost)
         for model_name, model in _classification_candidates():
@@ -1020,6 +1050,7 @@ def _select_best_classifier(split: SplitData) -> CandidateResult:
                 )
 
     if val_candidates:
+        # Try lightweight probability blends among top candidates for extra F1/accuracy edge.
         top = sorted(val_candidates, key=lambda item: item.score, reverse=True)[:3]
         for idx_a in range(len(top)):
             for idx_b in range(idx_a + 1, len(top)):
@@ -1054,6 +1085,7 @@ def _best_regression_blend_alpha(
     y_pred_model: np.ndarray,
     y_pred_baseline: np.ndarray,
 ) -> tuple[float, float]:
+    """Internal helper to compute best regression blend alpha."""
     best_alpha = 1.0
     best_rmse = math.inf
     candidates = np.unique(
@@ -1111,6 +1143,7 @@ def _best_directional_tilt_gamma(
     volatility_20: np.ndarray,
     horizon: str,
 ) -> tuple[float, float]:
+    """Internal helper to compute best directional tilt gamma."""
     baseline_rmse = float(math.sqrt(mean_squared_error(y_true, base_pred_close)))
     best_gamma = 0.0
     best_rmse = baseline_rmse
@@ -1153,12 +1186,15 @@ def _best_directional_tilt_gamma(
 
 
 def _select_best_regressor(split: SplitData, horizon: str) -> CandidateResult:
+    """Select best regressor. Internal helper."""
     best: CandidateResult | None = None
     recent_weight = _recent_sample_weights(len(split.x_train))
     fit_weight_modes: list[tuple[str, np.ndarray | None]] = [("uniform", None)]
     if len(split.x_train) >= 200:
         fit_weight_modes.append(("recent", recent_weight))
 
+    # Evaluate each regressor under both target formulations:
+    # 1) horizon log-return, 2) residual from persistence baseline.
     for model_name, model in _regression_candidates():
         for weight_mode, sample_weight in fit_weight_modes:
             tuned_name = model_name if weight_mode == "uniform" else f"{model_name}_{weight_mode}"
@@ -1223,6 +1259,7 @@ def _select_best_regressor(split: SplitData, horizon: str) -> CandidateResult:
 
 
 def _build_calibration_payload(y_true: np.ndarray, y_prob: np.ndarray) -> dict[str, float | str]:
+    """Build calibration payload. Internal helper."""
     clipped = np.clip(y_prob, 1e-6, 1 - 1e-6)
     avg_confidence = float(np.mean(np.maximum(clipped, 1 - clipped)))
     avg_accuracy = float(np.mean((clipped >= 0.5) == (y_true >= 0.5)))
@@ -1237,6 +1274,7 @@ def _build_calibration_payload(y_true: np.ndarray, y_prob: np.ndarray) -> dict[s
 
 
 def calibrate_confidence(raw_probability_up: float, calibration: dict[str, float | str]) -> float:
+    """Calibrate confidence."""
     scale = float(calibration.get("scale", 1.0))
     min_conf = float(calibration.get("min_confidence", 0.5))
     max_conf = float(calibration.get("max_confidence", 0.99))
@@ -1247,6 +1285,7 @@ def calibrate_confidence(raw_probability_up: float, calibration: dict[str, float
 
 
 def _metrics(y_true_cls: np.ndarray, y_pred_cls: np.ndarray, y_proba_cls: np.ndarray, y_true_reg: np.ndarray, y_pred_reg: np.ndarray) -> dict[str, float]:
+    """Internal helper to compute metrics."""
     return {
         "accuracy": float(accuracy_score(y_true_cls, y_pred_cls)),
         "precision": float(precision_score(y_true_cls, y_pred_cls, zero_division=0)),
@@ -1260,6 +1299,7 @@ def _metrics(y_true_cls: np.ndarray, y_pred_cls: np.ndarray, y_proba_cls: np.nda
 
 
 def _confidence_slice_metrics(y_true_cls: np.ndarray, y_pred_cls: np.ndarray, y_proba_cls: np.ndarray, threshold: float) -> dict[str, float]:
+    """Internal helper to compute confidence slice metrics."""
     confidence = np.maximum(y_proba_cls, 1 - y_proba_cls)
     mask = confidence >= threshold
     selected = int(np.sum(mask))
@@ -1283,6 +1323,7 @@ def _confidence_slice_metrics(y_true_cls: np.ndarray, y_pred_cls: np.ndarray, y_
 
 
 def _regime_metrics(split: SplitData, y_pred_cls: np.ndarray) -> dict[str, dict[str, float]]:
+    """Internal helper to compute regime metrics."""
     if split.x_test.empty:
         return {}
 
@@ -1307,6 +1348,7 @@ def _regime_metrics(split: SplitData, y_pred_cls: np.ndarray) -> dict[str, dict[
 
 
 def _baseline_metrics(y_true_cls: np.ndarray, y_true_reg: np.ndarray, current_close: np.ndarray) -> dict[str, float]:
+    """Internal helper to compute baseline metrics."""
     cls_baseline = np.ones_like(y_true_cls)
     reg_baseline = current_close
     return {
@@ -1319,6 +1361,7 @@ def _baseline_metrics(y_true_cls: np.ndarray, y_true_reg: np.ndarray, current_cl
 
 
 def _martingale_residual_diagnostic(y_true_reg: np.ndarray, y_pred_reg: np.ndarray) -> dict[str, float | bool]:
+    """Internal helper to compute martingale residual diagnostic."""
     residuals = y_true_reg - y_pred_reg
     if len(residuals) < 30:
         return {
@@ -1344,6 +1387,7 @@ def _martingale_residual_diagnostic(y_true_reg: np.ndarray, y_pred_reg: np.ndarr
 
 
 def _extract_top_feature_importance(model: Pipeline, feature_names: list[str], top_k: int = 8) -> list[dict[str, float | str]]:
+    """Internal helper to compute extract top feature importance."""
     try:
         estimator = model.steps[-1][1]
         importances = None
@@ -1361,6 +1405,7 @@ def _extract_top_feature_importance(model: Pipeline, feature_names: list[str], t
 
 
 def _near_pass_delta(metrics: dict[str, float], baseline: dict[str, float]) -> dict[str, float]:
+    """Internal helper to compute near pass delta."""
     return {
         "f1_vs_baseline": float(metrics["f1"] - baseline["f1"]),
         "accuracy_vs_baseline": float(metrics["accuracy"] - baseline["accuracy"]),
@@ -1369,6 +1414,7 @@ def _near_pass_delta(metrics: dict[str, float], baseline: dict[str, float]) -> d
 
 
 def _train_regime_models(split: SplitData, horizon: str) -> tuple[dict[str, Pipeline], dict[str, Pipeline]]:
+    """Train regime models. Internal helper."""
     cls_models: dict[str, Pipeline] = {}
     reg_models: dict[str, Pipeline] = {}
     regime_names = {0: "down", 1: "flat", 2: "up"}
@@ -1436,6 +1482,7 @@ def _train_regime_models(split: SplitData, horizon: str) -> tuple[dict[str, Pipe
 
 
 def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, models_root: Path, write_artifacts: bool = True) -> dict[str, object]:
+    """Evaluate symbol horizon."""
     min_samples = min_samples_for_horizon(spec.label)
     resolved = resolve_horizon_data(symbol, spec, min_samples=min_samples)
     if resolved is None:
@@ -1607,6 +1654,7 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
     if walk_forward_enforced:
         walk_forward_pass = bool(walk_forward_gate.get("enabled")) and bool(walk_forward_gate.get("strict_pass_all_folds"))
 
+    # Promotion gate is intentionally strict: edge over baseline + leakage safety + optional strict diagnostics.
     promotion_pass = (
         metrics["f1"] > baseline["f1"]
         and metrics["accuracy"] > baseline["accuracy"]
@@ -1721,6 +1769,7 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
     }
 
     if write_artifacts:
+        # Artifacts are versioned by symbol/horizon for deterministic inference and rollbacks.
         symbol_dir.mkdir(parents=True, exist_ok=True)
         dump(cls_best.model, artifact_paths["classification"])
         dump(reg_best.model, artifact_paths["regression"])
@@ -1736,6 +1785,7 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
 
 
 def training_universe_snapshot(symbols: list[str]) -> dict[str, object]:
+    """Compute training universe snapshot."""
     return {
         "count": len(symbols),
         "symbols": sorted(symbols),
@@ -1743,6 +1793,7 @@ def training_universe_snapshot(symbols: list[str]) -> dict[str, object]:
 
 
 def model_manifest_payload(model_version: str, universe: list[str], symbol_horizon_results: dict[str, dict[str, object]]) -> dict[str, object]:
+    """Compute model manifest payload."""
     earliest = None
     latest = None
 
@@ -1770,14 +1821,17 @@ def model_manifest_payload(model_version: str, universe: list[str], symbol_horiz
 
 
 def all_horizon_specs() -> list[HorizonSpec]:
+    """Compute all horizon specs."""
     return list(HORIZON_SPECS)
 
 
 def as_json(data: object) -> str:
+    """Return JSON."""
     return json.dumps(data, indent=2, sort_keys=False)
 
 
 def as_plain_dict(obj: object) -> dict[str, object]:
+    """Return plain dict."""
     if hasattr(obj, "__dataclass_fields__"):
         return asdict(obj)  # type: ignore[arg-type]
     raise TypeError("Object is not a dataclass instance")

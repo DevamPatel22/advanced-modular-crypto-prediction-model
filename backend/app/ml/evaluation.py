@@ -1,3 +1,5 @@
+"""Reusable evaluation utilities for walk-forward, costs, and risk diagnostics."""
+
 from __future__ import annotations
 
 import math
@@ -8,6 +10,7 @@ from sklearn.metrics import mean_squared_error
 
 
 def _periods_per_year_from_horizon(horizon: str) -> float:
+    """Internal helper to compute periods per year from horizon."""
     value = horizon.strip().lower()
     if value.endswith("mo") and value[:-2].isdigit():
         months = max(int(value[:-2]), 1)
@@ -36,11 +39,13 @@ def walk_forward_splits(
     min_train_fraction: float = 0.55,
     min_test_size: int = 40,
 ) -> list[tuple[int, int, int, int]]:
+    """Compute walk forward splits."""
     if n_samples <= 0:
         return []
     folds = max(int(folds), 1)
     min_train_fraction = float(np.clip(min_train_fraction, 0.25, 0.85))
     min_test_size = max(int(min_test_size), 20)
+    # Expanding-window walk-forward: train grows over time, test moves forward chronologically.
     train_end_start = max(int(n_samples * min_train_fraction), min_test_size * 2)
     if train_end_start >= n_samples - min_test_size:
         return []
@@ -58,6 +63,7 @@ def walk_forward_splits(
 
 
 def _threshold_grid(y_prob: np.ndarray) -> np.ndarray:
+    """Internal helper to compute threshold grid."""
     quantiles = np.quantile(y_prob, np.linspace(0.05, 0.95, 19)) if y_prob.size else np.array([0.5], dtype=float)
     grid = np.unique(
         np.concatenate(
@@ -76,6 +82,7 @@ def choose_threshold_walk_forward(
     y_prob: np.ndarray,
     folds: int = 4,
 ) -> tuple[float, dict[str, object]]:
+    """Choose threshold walk forward."""
     labels = np.asarray(y_true, dtype=int)
     prob = np.asarray(y_prob, dtype=float)
     if labels.size == 0 or labels.size != prob.size:
@@ -89,6 +96,7 @@ def choose_threshold_walk_forward(
     rows: list[tuple[float, float, float, float]] = []
     fold_payload: list[dict[str, float]] = []
     for threshold in thresholds:
+        # Score candidate threshold by baseline-relative margins across folds.
         margins: list[float] = []
         f1_deltas: list[float] = []
         acc_deltas: list[float] = []
@@ -151,6 +159,7 @@ def execution_aware_metrics(
     slippage_bps: float,
     max_turnover_per_step: float,
 ) -> dict[str, float]:
+    """Compute execution aware metrics."""
     current = np.asarray(current_close, dtype=float)
     target = np.asarray(target_close, dtype=float)
     signal = np.asarray(direction_up, dtype=int)
@@ -168,6 +177,7 @@ def execution_aware_metrics(
 
     raw_returns = (target / np.clip(current, 1e-12, None)) - 1.0
     desired_positions = np.where(signal == 1, 1.0, -1.0)
+    # Turnover cap is converted into max position delta per step.
     max_turnover_per_step = float(np.clip(max_turnover_per_step, 0.0, 1.0))
     max_position_delta = max_turnover_per_step * 2.0
     positions = np.zeros_like(desired_positions, dtype=float)
@@ -186,6 +196,7 @@ def execution_aware_metrics(
     net = gross - trading_cost
 
     def _sharpe(values: np.ndarray) -> float:
+        """Internal helper to compute sharpe."""
         mu = float(np.mean(values))
         sigma = float(np.std(values))
         if sigma <= 1e-12:
@@ -222,6 +233,7 @@ def strict_gate_walk_forward_diagnostic(
     decision_threshold: float,
     folds: int,
 ) -> dict[str, object]:
+    """Compute strict gate walk forward diagnostic."""
     y_cls = np.asarray(y_true_cls, dtype=int)
     y_prob = np.asarray(y_prob_cls, dtype=float)
     y_reg = np.asarray(y_true_reg, dtype=float)
@@ -244,6 +256,7 @@ def strict_gate_walk_forward_diagnostic(
     fold_rows: list[dict[str, float]] = []
     fold_pass_flags: list[bool] = []
     for fold_idx, (_train_start, _train_end, test_start, test_end) in enumerate(splits, start=1):
+        # Fold must beat baseline on both classification and regression dimensions.
         y_cls_fold = y_cls[test_start:test_end]
         y_prob_fold = y_prob[test_start:test_end]
         y_reg_fold = y_reg[test_start:test_end]
@@ -300,6 +313,7 @@ def bootstrap_metric_confidence_intervals(
     confidence: float = 0.95,
     random_seed: int = 42,
 ) -> dict[str, dict[str, float]]:
+    """Compute bootstrap metric confidence intervals."""
     true_cls = np.asarray(y_true_cls, dtype=int)
     pred_cls = np.asarray(y_pred_cls, dtype=int)
     true_reg = np.asarray(y_true_reg, dtype=float)
@@ -333,6 +347,7 @@ def bootstrap_metric_confidence_intervals(
         rmse_rows.append(float(math.sqrt(mean_squared_error(t_reg, p_reg))))
 
     def _summary(values: list[float]) -> dict[str, float]:
+        """Internal helper to compute summary."""
         arr = np.asarray(values, dtype=float)
         return {
             "mean": float(np.mean(arr)),
@@ -361,6 +376,7 @@ def paper_trading_metrics(
     max_turnover_per_step: float,
     initial_capital: float = 10_000.0,
 ) -> dict[str, float]:
+    """Compute paper trading metrics."""
     current = np.asarray(current_close, dtype=float)
     target = np.asarray(target_close, dtype=float)
     signal = np.asarray(direction_up, dtype=int)

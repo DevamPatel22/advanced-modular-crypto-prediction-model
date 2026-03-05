@@ -1,3 +1,5 @@
+"""Central application configuration loaded from environment variables."""
+
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -18,6 +20,9 @@ class Settings(BaseSettings):
     market_data_source_base_url: str = "https://api.exchange.coinbase.com"
     market_data_secondary_source_enabled: bool = True
     market_data_secondary_source_base_url: str = "https://api.binance.com"
+    market_data_tertiary_source_enabled: bool = True
+    market_data_tertiary_source_base_url: str = "https://min-api.cryptocompare.com"
+    market_data_tertiary_source_api_key: str = ""
     market_data_sqlite_path: str = "data/market_data.db"
     model_artifacts_root: str = "data/models"
     model_registry_path: str = "data/models/registry.json"
@@ -59,4 +64,5 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """Get settings."""
     return Settings()

@@ -25,21 +25,26 @@ from app.config import get_settings
 
 
 def _default_model_version() -> str:
+    """Compute default model version. Internal helper."""
     return datetime.now(tz=UTC).strftime("daily-%Y%m%d-%H%M%S")
 
 
 async def _resolve_universe(limit: int) -> list[str]:
+    """Resolve universe. Internal helper."""
     market_symbols = await fetch_symbols_by_quote(quote="USD", limit=limit)
     by_market = [item.symbol for item in market_symbols]
+    # Train only symbols that have at least minimal historical rows in local store.
     in_db = set(list_symbols_with_any_candles(min_rows=100))
     return [symbol for symbol in by_market if symbol in in_db]
 
 def _parse_symbols(raw: str) -> list[str]:
+    """Parse symbols. Internal helper."""
     symbols = [item.strip().upper() for item in raw.split(",") if item.strip()]
     return sorted(set(symbols))
 
 
 def _sha256_file(path: Path) -> str:
+    """Internal helper to compute sha256 file."""
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         while True:
@@ -51,6 +56,7 @@ def _sha256_file(path: Path) -> str:
 
 
 def main() -> None:
+    """Run the script entrypoint."""
     parser = argparse.ArgumentParser(description="Train candidate models for all US-tradable USD crypto symbols")
     parser.add_argument("--model-version", default=_default_model_version(), help="Model version folder name")
     parser.add_argument(
@@ -133,6 +139,7 @@ def main() -> None:
         }
 
         for spec in horizon_specs:
+            # Each symbol+horizon is trained/evaluated independently with strict gate checks.
             entry = evaluate_symbol_horizon(
                 symbol=symbol,
                 spec=spec,
@@ -184,6 +191,7 @@ def main() -> None:
     version_manifest_path.write_text(json.dumps(version_manifest, indent=2), encoding="utf-8")
 
     artifact_rows: list[dict[str, object]] = []
+    # Capture immutable checksums for reproducibility/audit of generated artifacts.
     for artifact in sorted(version_root.rglob("*")):
         if not artifact.is_file():
             continue

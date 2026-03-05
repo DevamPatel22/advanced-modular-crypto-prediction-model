@@ -26,6 +26,7 @@ _METRICS_CACHE: dict[str, dict[str, object]] = {}
 
 
 def _deterministic_signal(seed: str) -> tuple[str, float, float]:
+    """Internal helper to compute deterministic signal."""
     score = sum(ord(ch) for ch in seed)
     direction = "up" if score % 2 == 0 else "down"
     confidence = 0.52 + (score % 33) / 100
@@ -35,6 +36,7 @@ def _deterministic_signal(seed: str) -> tuple[str, float, float]:
 
 
 def _fallback_reference_close(symbol: str, horizon: str) -> float | None:
+    """Internal helper to compute fallback reference close."""
     spec = _find_horizon_spec(horizon)
     granularity = "1h"
     if spec is not None and spec.candidates:
@@ -49,6 +51,7 @@ def _fallback_reference_close(symbol: str, horizon: str) -> float | None:
 
 
 def _find_horizon_spec(horizon: str) -> HorizonSpec | None:
+    """Find horizon spec. Internal helper."""
     for spec in HORIZON_SPECS:
         if spec.label == horizon:
             return spec
@@ -56,6 +59,7 @@ def _find_horizon_spec(horizon: str) -> HorizonSpec | None:
 
 
 def _load_cached_model(path: Path) -> object:
+    """Load cached model. Internal helper."""
     key = str(path.resolve())
     if key not in _MODEL_CACHE:
         _MODEL_CACHE[key] = load(path)
@@ -63,6 +67,7 @@ def _load_cached_model(path: Path) -> object:
 
 
 def _load_calibration(path: Path) -> dict[str, float | str]:
+    """Load calibration. Internal helper."""
     key = str(path.resolve())
     if key not in _CALIBRATION_CACHE:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -73,6 +78,7 @@ def _load_calibration(path: Path) -> dict[str, float | str]:
 
 
 def _load_metrics(path: Path) -> dict[str, object]:
+    """Load metrics. Internal helper."""
     key = str(path.resolve())
     if key not in _METRICS_CACHE:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -83,6 +89,7 @@ def _load_metrics(path: Path) -> dict[str, object]:
 
 
 def _calibrate_confidence(raw_probability_up: float, calibration: dict[str, float | str]) -> float:
+    """Calibrate confidence. Internal helper."""
     scale = float(calibration.get("scale", 1.0))
     min_conf = float(calibration.get("min_confidence", 0.5))
     max_conf = float(calibration.get("max_confidence", 0.99))
@@ -93,6 +100,7 @@ def _calibrate_confidence(raw_probability_up: float, calibration: dict[str, floa
 
 
 def _load_recent_closes(symbol: str, granularity: str, limit: int = 500) -> list[float]:
+    """Load recent closes. Internal helper."""
     candles = load_candles(symbol.upper(), granularity)
     if candles.empty:
         return []
@@ -101,6 +109,7 @@ def _load_recent_closes(symbol: str, granularity: str, limit: int = 500) -> list
 
 
 def _realized_volatility(symbol: str, horizon: str) -> tuple[float, str]:
+    """Internal helper to compute realized volatility."""
     spec = _find_horizon_spec(horizon)
     granularity, steps = ("1h", 1)
     if spec is not None:
@@ -127,6 +136,7 @@ def _realized_volatility(symbol: str, horizon: str) -> tuple[float, str]:
 
 
 def _prediction_range_and_risk(direction: str, confidence: float, horizon_vol: float) -> tuple[float, float, float, str]:
+    """Internal helper to compute prediction range and risk."""
     sign = 1 if direction == "up" else -1
     center_pct = sign * (0.4 + max(0.0, confidence - 0.5) * 8.0)
     band_pct = max(0.8, min(30.0, horizon_vol * 100 * 1.8 + 0.35))
@@ -146,10 +156,12 @@ def _prediction_range_and_risk(direction: str, confidence: float, horizon_vol: f
 
 
 def _market_bias(direction: str) -> str:
+    """Internal helper to compute market bias."""
     return "bullish" if direction == "up" else "bearish"
 
 
 def _horizon_seconds(horizon: str) -> int:
+    """Internal helper to compute horizon seconds."""
     label = horizon.strip().lower()
     if label.endswith("mo"):
         return int(label[:-2]) * 30 * 24 * 60 * 60
@@ -161,12 +173,14 @@ def _horizon_seconds(horizon: str) -> int:
 
 
 def _price_bounds_from_return_range(current_price: float, min_pct: float, max_pct: float) -> tuple[float, float]:
+    """Internal helper to compute price bounds from return range."""
     low = max(current_price * (1.0 + (min_pct / 100.0)), 1e-8)
     high = max(current_price * (1.0 + (max_pct / 100.0)), 1e-8)
     return (low, high) if low <= high else (high, low)
 
 
 def _latest_features(symbol: str, spec: HorizonSpec, selected_features: list[str] | None = None) -> tuple[pd.DataFrame, float, str, int] | None:
+    """Internal helper to compute latest features."""
     active_features = selected_features or feature_columns_for_horizon(spec.label)
     for granularity, _steps in spec.candidates:
         frame = load_candles(symbol.upper(), granularity)
@@ -174,6 +188,7 @@ def _latest_features(symbol: str, spec: HorizonSpec, selected_features: list[str
             continue
 
         enriched = build_features(frame)
+        # Drop warmup rows where rolling features are not yet defined.
         ready = enriched.dropna(subset=active_features).reset_index(drop=True)
         if ready.empty:
             continue
@@ -187,7 +202,9 @@ def _latest_features(symbol: str, spec: HorizonSpec, selected_features: list[str
 
 
 def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionResponse | None, str | None]:
+    """Internal helper to compute predict from artifacts."""
     registry = ModelRegistry()
+    # Resolve only explicitly promoted symbol+horizon artifacts.
     artifact_paths = registry.resolve_artifacts(payload.symbol, payload.horizon)
     if artifact_paths is None:
         return None, "symbol_horizon_not_promoted_or_missing_artifacts"
@@ -238,6 +255,7 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
     )
     regression_blend_alpha = float(metrics_meta.get("regression_blend_alpha", 1.0))
     regression_blend_alpha = float(min(1.0, max(0.0, regression_blend_alpha)))
+    # Blend with persistence to reduce unstable jumps on noisy horizons.
     pred_close = (regression_blend_alpha * model_pred_close) + ((1.0 - regression_blend_alpha) * latest_close)
     directional_tilt_gamma = float(metrics_meta.get("directional_tilt_gamma", 0.0))
     feature_volatility_20 = float(features["volatility_20"].iloc[0]) if "volatility_20" in features.columns else 0.0
@@ -254,6 +272,7 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
     direction = "up" if raw_prob_up >= decision_threshold else "down"
     confidence = round(_calibrate_confidence(raw_prob_up, calibration), 4)
     settings = get_settings()
+    # Abstain if confidence is below runtime safety threshold.
     if settings.prediction_abstain_to_fallback and confidence < float(settings.prediction_confidence_min_for_model):
         return None, "model_confidence_below_threshold"
 
@@ -308,11 +327,13 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
 
 
 def generate_prediction(payload: PredictionRequest) -> PredictionResponse:
+    """Compute generate prediction."""
     settings = get_settings()
     model_response, fallback_reason = _predict_from_artifacts(payload)
     if model_response is not None:
         return model_response
 
+    # Deterministic fallback keeps endpoint contract stable when model inference is unavailable.
     direction, confidence, fallback_stub_close = _deterministic_signal(f"{payload.symbol}:{payload.horizon}")
     horizon_vol, vol_granularity = _realized_volatility(payload.symbol, payload.horizon)
     range_min_pct, range_max_pct, risk_score, risk_level = _prediction_range_and_risk(

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Run repeated strict-gate promotion attempts across selected tuning profiles."""
+
 from __future__ import annotations
 
 import argparse
@@ -67,6 +69,7 @@ PROFILE_LIBRARY: dict[str, Profile] = {
 
 
 def _parse_pairs(raw: str) -> list[tuple[str, str]]:
+    """Parse pairs. Internal helper."""
     out: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for token in raw.split(","):
@@ -85,6 +88,7 @@ def _parse_pairs(raw: str) -> list[tuple[str, str]]:
 
 
 def _parse_profiles(raw: str) -> list[Profile]:
+    """Parse profiles. Internal helper."""
     names = [item.strip() for item in raw.split(",") if item.strip()]
     if not names:
         names = ["default"]
@@ -99,6 +103,7 @@ def _parse_profiles(raw: str) -> list[Profile]:
 
 
 def _promoted_set(payload: dict[str, object]) -> set[tuple[str, str]]:
+    """Internal helper to compute promoted set."""
     out: set[tuple[str, str]] = set()
     promoted = payload.get("promoted", {})
     if not isinstance(promoted, dict):
@@ -113,6 +118,7 @@ def _promoted_set(payload: dict[str, object]) -> set[tuple[str, str]]:
 
 
 def _extract_json_lines(stdout: str) -> list[dict[str, object]]:
+    """Internal helper to compute extract JSON lines."""
     out: list[dict[str, object]] = []
     for line in stdout.splitlines():
         text = line.strip()
@@ -128,11 +134,13 @@ def _extract_json_lines(stdout: str) -> list[dict[str, object]]:
 
 
 def _default_output_path() -> Path:
+    """Compute default output path. Internal helper."""
     stamp = datetime.now(tz=UTC).strftime("%Y%m%d-%H%M%S")
     return PROJECT_ROOT / "reports" / f"strict_promotion_loop_{stamp}.json"
 
 
 def main() -> None:
+    """Run the script entrypoint."""
     parser = argparse.ArgumentParser(description="Strict-only sequential promotion attempts for target symbol/horizon pairs")
     parser.add_argument("--pairs", required=True, help="Comma-separated SYMBOL:HORIZON list")
     parser.add_argument("--symbols", default="BTC-USD,ETH-USD,SOL-USD", help="Symbol universe forwarded to near_promotion_retrain")
@@ -177,6 +185,7 @@ def main() -> None:
         attempts: list[dict[str, object]] = []
         promoted = False
         for attempt_index in range(1, max_attempts + 1):
+            # Rotate profiles per attempt to search for a strict-gate passing configuration.
             profile = profiles[(attempt_index - 1) % len(profiles)]
             total_attempts += 1
             model_version = f"strictseq-{datetime.now(tz=UTC).strftime('%Y%m%d-%H%M%S')}-{symbol.lower().replace('-', '')}-{horizon}-a{attempt_index}"
@@ -212,6 +221,7 @@ def main() -> None:
             env = os.environ.copy()
             env.update(profile.env_overrides)
             try:
+                # Timeout protects long-running experiments from blocking the full loop.
                 proc = subprocess.run(
                     command,
                     cwd=PROJECT_ROOT,

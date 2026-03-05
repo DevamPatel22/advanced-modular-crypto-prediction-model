@@ -9,7 +9,7 @@ Current scope:
 - FastAPI service with market and prediction APIs
 - US-tradable symbol universe validation (`quote=USD`)
 - market-data retrieval + SQLite caching
-  Candle ingestion uses Coinbase as primary and Binance (free spot API) as secondary fallback/supplement.
+  Candle ingestion uses Coinbase as primary, Binance (free spot API) as secondary, and CryptoCompare (free API) as tertiary fallback/supplement.
   Credibility guards are enforced (OHLCV integrity, timestamp consistency, freshness, cross-source divergence checks).
 - background ingestion loop for tradable symbols
 - risk-aware prediction range output
@@ -56,7 +56,10 @@ Background ingestion loop:
 - Source controls:
   `MARKET_DATA_SOURCE_BASE_URL` (primary, Coinbase),
   `MARKET_DATA_SECONDARY_SOURCE_ENABLED`,
-  `MARKET_DATA_SECONDARY_SOURCE_BASE_URL` (secondary, Binance).
+  `MARKET_DATA_SECONDARY_SOURCE_BASE_URL` (secondary, Binance),
+  `MARKET_DATA_TERTIARY_SOURCE_ENABLED`,
+  `MARKET_DATA_TERTIARY_SOURCE_BASE_URL` (tertiary, CryptoCompare),
+  `MARKET_DATA_TERTIARY_SOURCE_API_KEY` (optional).
 
 Source telemetry:
 

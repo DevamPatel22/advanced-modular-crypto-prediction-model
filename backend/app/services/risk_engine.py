@@ -1,3 +1,5 @@
+"""Portfolio risk metrics and deterministic risk-limit enforcement helpers."""
+
 from __future__ import annotations
 
 import math
@@ -10,6 +12,7 @@ def portfolio_risk_snapshot(
     confidence_level: float = 0.95,
     annualization_factor: float = 365.0,
 ) -> dict[str, float]:
+    """Compute portfolio risk snapshot."""
     values = np.asarray(returns, dtype=float)
     if values.size == 0:
         return {
@@ -58,10 +61,12 @@ def apply_risk_limits(
     max_gross_exposure: float,
     max_turnover: float,
 ) -> dict[str, object]:
+    """Apply risk limits."""
     cleaned: dict[str, float] = {}
     breached_limits: list[str] = []
 
     for symbol, weight in proposed_weights.items():
+        # First pass clamps each symbol to the single-name risk limit.
         bounded = float(np.clip(float(weight), -max_position_abs, max_position_abs))
         if not math.isclose(float(weight), bounded, rel_tol=1e-9, abs_tol=1e-9):
             breached_limits.append(f"position_cap:{symbol}")
@@ -69,6 +74,7 @@ def apply_risk_limits(
 
     gross_exposure = float(sum(abs(value) for value in cleaned.values()))
     if gross_exposure > max_gross_exposure and gross_exposure > 1e-12:
+        # Scale all positions proportionally if gross exposure exceeds cap.
         scale = float(max_gross_exposure / gross_exposure)
         cleaned = {symbol: weight * scale for symbol, weight in cleaned.items()}
         gross_exposure = float(sum(abs(value) for value in cleaned.values()))
@@ -77,6 +83,7 @@ def apply_risk_limits(
     symbols = set(cleaned) | set(current_weights)
     turnover = float(sum(abs(cleaned.get(symbol, 0.0) - float(current_weights.get(symbol, 0.0))) for symbol in symbols))
     if turnover > max_turnover and turnover > 1e-12:
+        # Shrink moves toward current holdings to satisfy turnover limits.
         scale = float(max_turnover / turnover)
         adjusted: dict[str, float] = {}
         for symbol in symbols:
