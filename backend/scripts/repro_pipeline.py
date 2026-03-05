@@ -67,6 +67,7 @@ def main() -> None:
     parser.add_argument("--model-version", default=_default_model_version(), help="Candidate model version")
     parser.add_argument("--phase", choices=["phase1", "phase2", "phase3"], default="phase3")
     parser.add_argument("--symbols", default="", help="Optional comma-separated symbol subset")
+    parser.add_argument("--horizons", default="", help="Optional comma-separated horizon subset")
     parser.add_argument("--symbol-limit", type=int, default=2000)
     parser.add_argument("--batch-size", type=int, default=20)
     parser.add_argument("--phase2-batch-size", type=int, default=20)
@@ -87,6 +88,16 @@ def main() -> None:
     parser.add_argument("--quality-granularities", default="1m,5m,15m,1h,6h,1d")
     parser.add_argument("--quality-max-gap-ratio", type=float, default=0.10)
     parser.add_argument("--quality-min-rows-map", default="")
+    parser.add_argument(
+        "--enforce-sla",
+        action="store_true",
+        help="Enforce SLA gate (quality + source uptime) before retraining",
+    )
+    parser.add_argument(
+        "--enforce-ci-gate",
+        action="store_true",
+        help="Require CI gate report before promotion",
+    )
     parser.add_argument("--rollback-guard-hours", type=int, default=24)
     parser.add_argument("--rollback-guard-max-stale", type=float, default=0.35)
     parser.add_argument("--output", default="reports/repro_bundle.json", help="Bundle report output path")
@@ -123,6 +134,12 @@ def main() -> None:
         retrain_cmd.append("--skip-ingest")
     if args.symbols.strip():
         retrain_cmd.extend(["--symbols", args.symbols.strip()])
+    if args.horizons.strip():
+        retrain_cmd.extend(["--horizons", args.horizons.strip()])
+    if args.enforce_sla:
+        retrain_cmd.append("--enforce-sla")
+    if args.enforce_ci_gate:
+        retrain_cmd.append("--enforce-ci-gate")
 
     retrain_proc = _run_command(retrain_cmd)
 

@@ -37,7 +37,9 @@ class Settings(BaseSettings):
     ingestion_cycle_seconds: int = 600
     retrain_schedule_cron: str = "0 2 * * *"
     martingale_gate_mode: str = "bootstrap"
-    bootstrap_phase1_horizons: str = "5m,1h,3h,6h,12h"
+    bootstrap_phase1_horizons: str = "6h,12h,1d"
+    phase1_focus_symbols: str = "BTC-USD,ETH-USD,SOL-USD"
+    phase1_focus_horizons: str = "6h,12h,1d"
     classification_label_mode: str = "triple_barrier"
     triple_barrier_sigma_mult: float = 1.0
     regime_models_enabled: bool = True
@@ -56,6 +58,9 @@ class Settings(BaseSettings):
     execution_slippage_bps: float = 3.0
     execution_max_turnover_per_step: float = 1.0
     paper_trade_initial_capital: float = 10000.0
+    sla_min_live_source_ratio: float = 0.70
+    sla_max_stale_cache_ratio: float = 0.30
+    ci_gate_max_age_hours: int = 24
     promotion_require_pnl_above_baseline: bool = True
     promotion_max_drawdown_limit: float = -0.45
     metric_ci_bootstrap_samples: int = 400

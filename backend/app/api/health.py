@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Query
 
 from app.config import get_settings
-from app.services.data_readiness import latest_data_quality_report, source_health_summary
+from app.services.data_readiness import latest_data_quality_report, latest_scorecard_report, source_health_summary
 
 router = APIRouter(tags=["health"])
 
@@ -37,4 +37,14 @@ def health_source_health(hours: int = Query(default=24, ge=1, le=168)) -> dict[s
     return {
         "status": "ok",
         "source_health": summary,
+    }
+
+
+@router.get("/health/model-scorecard")
+def health_model_scorecard() -> dict[str, object]:
+    """Compute health model scorecard."""
+    scorecard = latest_scorecard_report()
+    return {
+        "status": "ok",
+        "scorecard": scorecard,
     }

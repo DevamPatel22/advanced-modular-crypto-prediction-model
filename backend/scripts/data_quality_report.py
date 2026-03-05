@@ -37,6 +37,14 @@ DEFAULT_MAX_STALE_STEPS = {
     "6h": 16,
     "1d": 5,
 }
+DEFAULT_MIN_COVERAGE_RATIO = {
+    "1m": 0.80,
+    "5m": 0.82,
+    "15m": 0.85,
+    "1h": 0.88,
+    "6h": 0.90,
+    "1d": 0.92,
+}
 
 
 def _parse_csv(raw: str) -> list[str]:
@@ -77,6 +85,25 @@ def _parse_int_map(raw: str, fallback: dict[str, int]) -> dict[str, int]:
     return parsed
 
 
+def _parse_float_map(raw: str, fallback: dict[str, float]) -> dict[str, float]:
+    """Parse float map. Internal helper."""
+    parsed = dict(fallback)
+    if not raw.strip():
+        return parsed
+    for token in _parse_csv(raw):
+        if ":" not in token:
+            continue
+        key_raw, value_raw = token.split(":", 1)
+        key = key_raw.strip()
+        try:
+            value = float(value_raw.strip())
+        except ValueError:
+            continue
+        if key in GRANULARITY_TO_SECONDS and 0.0 <= value <= 1.0:
+            parsed[key] = value
+    return parsed
+
+
 def _db_path() -> Path:
     """Internal helper to compute database path."""
     settings = get_settings()
@@ -104,6 +131,7 @@ def _pair_quality(
     min_rows: int,
     max_stale_steps: int,
     max_gap_ratio: float,
+    min_coverage_ratio: float,
 ) -> dict[str, object]:
     """Internal helper to compute pair quality."""
     now_ts = int(datetime.now(tz=UTC).timestamp())
@@ -138,6 +166,7 @@ def _pair_quality(
         "fresh_ok": bool(freshness_steps <= max_stale_steps),
         "off_grid_ok": bool(off_grid_intervals == 0),
         "gap_ok": bool(gap_ratio <= max_gap_ratio),
+        "coverage_ok": bool(coverage_ratio >= min_coverage_ratio),
     }
     gate_passed = all(checks.values())
 
@@ -154,6 +183,7 @@ def _pair_quality(
         "expected_rows_by_span": expected_rows,
         "missing_rows_by_span": missing_rows,
         "coverage_ratio": round(float(coverage_ratio), 6),
+        "min_coverage_ratio_required": round(float(min_coverage_ratio), 6),
         "gap_intervals": gap_intervals,
         "gap_ratio": round(float(gap_ratio), 6),
         "max_gap_ratio_allowed": max_gap_ratio,
@@ -188,6 +218,11 @@ def main() -> None:
         default=0.10,
         help="Maximum allowed gap interval ratio per pair",
     )
+    parser.add_argument(
+        "--min-coverage-ratio-map",
+        default="",
+        help="Override minimum coverage ratio per granularity, format: 1m:0.8,1h:0.9",
+    )
     parser.add_argument("--output", default="reports/data_quality_report.json", help="Output JSON path")
     args = parser.parse_args()
 
@@ -201,6 +236,7 @@ def main() -> None:
 
     min_rows_map = _parse_int_map(args.min_rows_map, DEFAULT_MIN_ROWS)
     max_stale_steps_map = _parse_int_map(args.max_stale_steps_map, DEFAULT_MAX_STALE_STEPS)
+    min_coverage_ratio_map = _parse_float_map(args.min_coverage_ratio_map, DEFAULT_MIN_COVERAGE_RATIO)
     max_gap_ratio = float(max(args.max_gap_ratio, 0.0))
 
     db_path = _db_path()
@@ -219,6 +255,7 @@ def main() -> None:
                     min_rows=int(min_rows_map.get(granularity, 100)),
                     max_stale_steps=int(max_stale_steps_map.get(granularity, 24)),
                     max_gap_ratio=max_gap_ratio,
+                    min_coverage_ratio=float(min_coverage_ratio_map.get(granularity, 0.0)),
                 )
                 report_pairs.append(pair_report)
 
@@ -240,6 +277,7 @@ def main() -> None:
         "config": {
             "min_rows_map": {k: int(v) for k, v in min_rows_map.items() if k in granularities},
             "max_stale_steps_map": {k: int(v) for k, v in max_stale_steps_map.items() if k in granularities},
+            "min_coverage_ratio_map": {k: float(v) for k, v in min_coverage_ratio_map.items() if k in granularities},
             "max_gap_ratio": max_gap_ratio,
         },
         "pair_count": len(report_pairs),

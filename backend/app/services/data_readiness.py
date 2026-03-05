@@ -64,6 +64,40 @@ def latest_data_quality_report() -> dict[str, object]:
     }
 
 
+def latest_scorecard_report() -> dict[str, object]:
+    """Compute latest scorecard report."""
+    root = _reports_root()
+    candidates = sorted(
+        list(root.glob("scorecard_*.json")),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        return {
+            "available": False,
+            "message": "No scorecard reports found in reports directory",
+        }
+
+    path = candidates[0]
+    payload = _safe_load_json(path)
+    if payload is None:
+        return {
+            "available": False,
+            "message": f"Latest scorecard report is unreadable: {path.name}",
+            "path": str(path),
+        }
+
+    return {
+        "available": True,
+        "path": str(path),
+        "generated_at": payload.get("generated_at"),
+        "model_version": payload.get("model_version"),
+        "status": payload.get("status"),
+        "core_summary": payload.get("core_summary", {}),
+        "overall_summary": payload.get("overall_summary", {}),
+    }
+
+
 def source_health_summary(hours: int = 24) -> dict[str, object]:
     """Compute source health summary."""
     db_path = _db_path()
@@ -131,6 +165,8 @@ def source_health_summary(hours: int = 24) -> dict[str, object]:
         ).fetchall()
 
     stale_ratio = (stale_events / total_events) if total_events > 0 else 0.0
+    live_events = max(total_events - stale_events, 0)
+    live_source_ratio = (live_events / total_events) if total_events > 0 else 0.0
     status = "healthy"
     if total_events == 0:
         status = "no_recent_events"
@@ -147,6 +183,8 @@ def source_health_summary(hours: int = 24) -> dict[str, object]:
         "total_events": total_events,
         "stale_cache_events": stale_events,
         "stale_cache_ratio": round(float(stale_ratio), 6),
+        "live_source_events": live_events,
+        "live_source_ratio": round(float(live_source_ratio), 6),
         "source_breakdown": [
             {"selected_source": str(row["selected_source"]), "count": int(row["count"])}
             for row in by_source_rows

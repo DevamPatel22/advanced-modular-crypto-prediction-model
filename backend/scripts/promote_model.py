@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sys
 
@@ -31,8 +31,29 @@ def _read_json(path: Path) -> dict[str, object] | None:
         return None
 
 
+def _ci_gate_ok(path: Path, max_age_hours: int) -> tuple[bool, str]:
+    """Internal helper to compute ci gate ok."""
+    payload = _read_json(path)
+    if payload is None:
+        return False, "ci_gate_report_missing_or_invalid"
+    if str(payload.get("status", "")).lower() != "ok":
+        return False, "ci_gate_report_failed"
+    generated_at = payload.get("generated_at")
+    if not isinstance(generated_at, str):
+        return False, "ci_gate_generated_at_missing"
+    try:
+        ts = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+    except Exception:
+        return False, "ci_gate_generated_at_invalid"
+    min_allowed = datetime.now(tz=UTC) - timedelta(hours=max(int(max_age_hours), 1))
+    if ts < min_allowed:
+        return False, "ci_gate_report_too_old"
+    return True, ""
+
+
 def main() -> None:
     """Run the script entrypoint."""
+    defaults = get_settings()
     parser = argparse.ArgumentParser(description="Promote candidate model version to active registry")
     parser.add_argument("--candidate", required=True, help="Candidate model version name")
     parser.add_argument("--active", default=None, help="Current active version (optional check)")
@@ -58,16 +79,41 @@ def main() -> None:
         action="store_true",
         help="Merge newly passed pairs with currently promoted registry entries",
     )
+    parser.add_argument(
+        "--require-ci-gate",
+        action="store_true",
+        help="Require a fresh passing CI gate report before promotion",
+    )
+    parser.add_argument(
+        "--ci-gate-report",
+        default="reports/ci_gate_latest.json",
+        help="CI gate report path",
+    )
+    parser.add_argument(
+        "--ci-gate-max-age-hours",
+        type=int,
+        default=int(defaults.ci_gate_max_age_hours),
+        help="Maximum allowed CI gate report age",
+    )
     args = parser.parse_args()
-    settings = get_settings()
+    settings = defaults
     bootstrap_horizons = {
         item.strip() for item in settings.bootstrap_phase1_horizons.split(",") if item.strip()
     }
+    phase1_symbols = [item.strip().upper() for item in settings.phase1_focus_symbols.split(",") if item.strip()]
 
     registry = ModelRegistry()
     current_active = registry.get_active_model_version()
     if args.active and args.active != current_active:
         raise SystemExit(f"Active version mismatch: expected {args.active}, found {current_active}")
+
+    if args.require_ci_gate:
+        ci_gate_path = Path(args.ci_gate_report)
+        if not ci_gate_path.is_absolute():
+            ci_gate_path = PROJECT_ROOT / ci_gate_path
+        ci_ok, ci_reason = _ci_gate_ok(ci_gate_path, int(args.ci_gate_max_age_hours))
+        if not ci_ok:
+            raise SystemExit(f"CI gate check failed: {ci_reason} ({ci_gate_path})")
 
     candidate_root = registry.models_root / args.candidate
     if not candidate_root.exists():
@@ -107,7 +153,6 @@ def main() -> None:
         if symbol_map:
             passed_by_symbol[symbol] = symbol_map
 
-    phase1_symbols = ["BTC-USD", "ETH-USD", "SOL-USD"]
     promoted: dict[str, dict[str, bool]] = {}
     if args.phase == "phase1":
         for symbol in phase1_symbols:

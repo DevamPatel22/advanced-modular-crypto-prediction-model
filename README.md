@@ -127,16 +127,31 @@ Institutional-grade additions now included:
 - purged split leakage diagnostics + bootstrap confidence intervals
 - execution-aware evaluation metrics (fee/slippage/turnover-adjusted)
 - paper-trading PnL metrics (equity, drawdown, VaR/CVaR, turnover)
+- hard SLA gate for data quality + source uptime before retraining/promotion
 - portfolio risk API (`/api/v1/risk/portfolio-snapshot`, `/api/v1/risk/limit-check`)
 - expanded free proxy features for derivatives/microstructure/on-chain signals
 - experiment event logging and safe auto-rollback guard tooling
 - immutable artifact checksum manifests for each model version
+- daily scorecard + model-card generation for decision transparency
 
 One-command reproducibility run (ingest -> quality-gated retrain -> promote -> rollback guard dry-run):
 
 ```bash
 cd backend
 python scripts/repro_pipeline.py --phase phase3 --model-version repro-$(date +%Y%m%d-%H%M%S)
+```
+
+Phase 0-30 core focus run (BTC/ETH/SOL and 6h/12h/1d only):
+
+```bash
+cd backend
+python scripts/daily_retrain.py \
+  --phase phase1 \
+  --symbols BTC-USD,ETH-USD,SOL-USD \
+  --horizons 6h,12h,1d \
+  --enforce-data-quality \
+  --enforce-sla \
+  --enforce-ci-gate
 ```
 
 This generates a bundle report with command traces, settings snapshot, report checksums, and git commit linkage.

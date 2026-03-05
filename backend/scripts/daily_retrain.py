@@ -34,6 +34,7 @@ def _today_version() -> str:
 
 def main() -> None:
     """Run the script entrypoint."""
+    defaults = get_settings()
     parser = argparse.ArgumentParser(description="Run daily ingest -> train -> promote pipeline")
     parser.add_argument("--model-version", default=_today_version(), help="Candidate model version")
     parser.add_argument("--phase", choices=["phase1", "phase2", "phase3"], default="phase3", help="Promotion phase")
@@ -44,6 +45,11 @@ def main() -> None:
         "--symbols",
         default="",
         help="Optional comma-separated explicit symbol set for training",
+    )
+    parser.add_argument(
+        "--horizons",
+        default="",
+        help="Optional comma-separated explicit horizon set for training",
     )
     parser.add_argument("--skip-ingest", action="store_true", help="Skip pre-training ingestion cycle")
     parser.add_argument("--output-prefix", default="reports", help="Output folder for reports")
@@ -68,9 +74,60 @@ def main() -> None:
         default="",
         help="Optional per-granularity row floors for quality preflight, format 1m:20000,1h:4000",
     )
+    parser.add_argument(
+        "--quality-min-coverage-ratio-map",
+        default="",
+        help="Optional per-granularity coverage floors, format 1m:0.8,1h:0.9",
+    )
+    parser.add_argument(
+        "--enforce-sla",
+        action="store_true",
+        help="Run SLA gate (data quality + source uptime) and abort retrain on failure",
+    )
+    parser.add_argument(
+        "--sla-min-live-source-ratio",
+        type=float,
+        default=float(defaults.sla_min_live_source_ratio),
+        help="Minimum acceptable live-source ratio for SLA gate",
+    )
+    parser.add_argument(
+        "--sla-max-stale-cache-ratio",
+        type=float,
+        default=float(defaults.sla_max_stale_cache_ratio),
+        help="Maximum acceptable stale-cache ratio for SLA gate",
+    )
+    parser.add_argument(
+        "--sla-source-hours",
+        type=int,
+        default=24,
+        help="Source health lookback window for SLA gate",
+    )
+    parser.add_argument(
+        "--enforce-ci-gate",
+        action="store_true",
+        help="Run CI gate checks before promotion and require pass",
+    )
+    parser.add_argument(
+        "--ci-gate-max-age-hours",
+        type=int,
+        default=int(defaults.ci_gate_max_age_hours),
+        help="Maximum age for reusable passing CI gate report",
+    )
+    parser.add_argument(
+        "--skip-scorecard",
+        action="store_true",
+        help="Skip scorecard/model-card generation after promotion",
+    )
     args = parser.parse_args()
 
     settings = get_settings()
+    effective_symbols = args.symbols.strip()
+    effective_horizons = args.horizons.strip()
+    if args.phase == "phase1":
+        if not effective_symbols:
+            effective_symbols = settings.phase1_focus_symbols
+        if not effective_horizons:
+            effective_horizons = settings.phase1_focus_horizons
     output_root = PROJECT_ROOT / args.output_prefix
     output_root.mkdir(parents=True, exist_ok=True)
 
@@ -81,6 +138,10 @@ def main() -> None:
         "steps": [],
     }
     quality_report_path = f"{args.output_prefix}/data_quality_{args.model_version}.json"
+    sla_report_path = f"{args.output_prefix}/sla_gate_{args.model_version}.json"
+    ci_gate_report_path = f"{args.output_prefix}/ci_gate_{args.model_version}.json"
+    scorecard_output_path = f"{args.output_prefix}/scorecard_{args.model_version}.json"
+    model_card_output_path = f"../docs/model-cards/{args.model_version}.md"
 
     if not args.skip_ingest:
         try:
@@ -101,10 +162,12 @@ def main() -> None:
             "--output",
             quality_report_path,
         ]
-        symbols_for_quality = args.symbols.strip() if args.symbols.strip() else settings.supported_symbols
+        symbols_for_quality = effective_symbols if effective_symbols else settings.supported_symbols
         quality_cmd.extend(["--symbols", symbols_for_quality])
         if args.quality_min_rows_map.strip():
             quality_cmd.extend(["--min-rows-map", args.quality_min_rows_map.strip()])
+        if args.quality_min_coverage_ratio_map.strip():
+            quality_cmd.extend(["--min-coverage-ratio-map", args.quality_min_coverage_ratio_map.strip()])
 
         quality_proc = _run_command(quality_cmd)
         quality_gate_passed = False
@@ -147,6 +210,50 @@ def main() -> None:
             )
             raise SystemExit(1)
 
+    if args.enforce_sla:
+        sla_cmd = [
+            sys.executable,
+            "scripts/sla_gate.py",
+            "--source-hours",
+            str(max(int(args.sla_source_hours), 1)),
+            "--min-live-source-ratio",
+            str(float(args.sla_min_live_source_ratio)),
+            "--max-stale-cache-ratio",
+            str(float(args.sla_max_stale_cache_ratio)),
+            "--output",
+            sla_report_path,
+            "--require-quality-pass",
+        ]
+        quality_file = PROJECT_ROOT / quality_report_path
+        if quality_file.exists():
+            sla_cmd.extend(["--quality-report", str(quality_file)])
+        sla_proc = _run_command(sla_cmd)
+        run_report["steps"].append(
+            {
+                "step": "sla_gate",
+                "status": "ok" if sla_proc.returncode == 0 else "failed",
+                "returncode": sla_proc.returncode,
+                "stdout_tail": sla_proc.stdout[-4000:],
+                "stderr_tail": sla_proc.stderr[-4000:],
+                "sla_report": str(PROJECT_ROOT / sla_report_path),
+            }
+        )
+        if sla_proc.returncode != 0:
+            output_file = output_root / f"daily_retrain_{args.model_version}.json"
+            output_file.write_text(json.dumps(run_report, indent=2), encoding="utf-8")
+            print(
+                json.dumps(
+                    {
+                        "status": "failed",
+                        "reason": "sla_gate_failed",
+                        "report": str(output_file),
+                        "sla_report": str(PROJECT_ROOT / sla_report_path),
+                    },
+                    indent=2,
+                )
+            )
+            raise SystemExit(1)
+
     train_output = f"{args.output_prefix}/summary_report_{args.model_version}.json"
     # Train a candidate version first; promotion is handled separately below.
     train_cmd = [
@@ -161,8 +268,10 @@ def main() -> None:
         "--batch-size",
         str(args.batch_size),
     ]
-    if args.symbols.strip():
-        train_cmd.extend(["--symbols", args.symbols.strip()])
+    if effective_symbols:
+        train_cmd.extend(["--symbols", effective_symbols])
+    if effective_horizons:
+        train_cmd.extend(["--horizons", effective_horizons])
     train_proc = _run_command(train_cmd)
     run_report["steps"].append(
         {
@@ -179,6 +288,49 @@ def main() -> None:
         output_file.write_text(json.dumps(run_report, indent=2), encoding="utf-8")
         print(json.dumps({"status": "failed", "report": str(output_file)}, indent=2))
         raise SystemExit(1)
+
+    if args.enforce_ci_gate:
+        ci_cmd = [
+            sys.executable,
+            "scripts/ci_gate.py",
+            "--output",
+            ci_gate_report_path,
+            "--reuse-if-fresh",
+            "--max-age-hours",
+            str(max(int(args.ci_gate_max_age_hours), 1)),
+            "--repro-phase",
+            "phase1",
+            "--repro-symbols",
+            (effective_symbols if effective_symbols else settings.phase1_focus_symbols),
+            "--repro-horizons",
+            (effective_horizons if effective_horizons else settings.phase1_focus_horizons),
+        ]
+        ci_proc = _run_command(ci_cmd)
+        run_report["steps"].append(
+            {
+                "step": "ci_gate",
+                "status": "ok" if ci_proc.returncode == 0 else "failed",
+                "returncode": ci_proc.returncode,
+                "stdout_tail": ci_proc.stdout[-4000:],
+                "stderr_tail": ci_proc.stderr[-4000:],
+                "ci_gate_report": str(PROJECT_ROOT / ci_gate_report_path),
+            }
+        )
+        if ci_proc.returncode != 0:
+            output_file = output_root / f"daily_retrain_{args.model_version}.json"
+            output_file.write_text(json.dumps(run_report, indent=2), encoding="utf-8")
+            print(
+                json.dumps(
+                    {
+                        "status": "failed",
+                        "reason": "ci_gate_failed",
+                        "report": str(output_file),
+                        "ci_gate_report": str(PROJECT_ROOT / ci_gate_report_path),
+                    },
+                    indent=2,
+                )
+            )
+            raise SystemExit(1)
 
     promote_output = f"{args.output_prefix}/promotion_report_{args.model_version}.json"
     # Promotion applies phase rules and only activates pairs that pass strict gates.
@@ -200,6 +352,16 @@ def main() -> None:
     active_before = registry.get_active_model_version()
     if active_before:
         promote_cmd.extend(["--active", active_before])
+    if args.enforce_ci_gate:
+        promote_cmd.extend(
+            [
+                "--require-ci-gate",
+                "--ci-gate-report",
+                ci_gate_report_path,
+                "--ci-gate-max-age-hours",
+                str(max(int(args.ci_gate_max_age_hours), 1)),
+            ]
+        )
 
     promote_proc = _run_command(promote_cmd)
     run_report["steps"].append(
@@ -212,6 +374,63 @@ def main() -> None:
         }
     )
 
+    if not args.skip_scorecard:
+        scorecard_cmd = [
+            sys.executable,
+            "scripts/daily_scorecard.py",
+            "--model-version",
+            args.model_version,
+            "--summary-report",
+            train_output,
+            "--promotion-report",
+            promote_output,
+            "--symbols",
+            (effective_symbols if effective_symbols else settings.phase1_focus_symbols),
+            "--horizons",
+            (effective_horizons if effective_horizons else settings.phase1_focus_horizons),
+            "--source-hours",
+            str(max(int(args.sla_source_hours), 1)),
+            "--output",
+            scorecard_output_path,
+        ]
+        scorecard_proc = _run_command(scorecard_cmd)
+        run_report["steps"].append(
+            {
+                "step": "daily_scorecard",
+                "status": "ok" if scorecard_proc.returncode == 0 else "failed",
+                "returncode": scorecard_proc.returncode,
+                "stdout_tail": scorecard_proc.stdout[-4000:],
+                "stderr_tail": scorecard_proc.stderr[-4000:],
+                "scorecard_report": str(PROJECT_ROOT / scorecard_output_path),
+            }
+        )
+
+        model_card_cmd = [
+            sys.executable,
+            "scripts/generate_model_card.py",
+            "--model-version",
+            args.model_version,
+            "--summary-report",
+            train_output,
+            "--promotion-report",
+            promote_output,
+            "--scorecard-report",
+            scorecard_output_path,
+            "--output",
+            model_card_output_path,
+        ]
+        model_card_proc = _run_command(model_card_cmd)
+        run_report["steps"].append(
+            {
+                "step": "generate_model_card",
+                "status": "ok" if model_card_proc.returncode == 0 else "failed",
+                "returncode": model_card_proc.returncode,
+                "stdout_tail": model_card_proc.stdout[-4000:],
+                "stderr_tail": model_card_proc.stderr[-4000:],
+                "model_card": str(PROJECT_ROOT / model_card_output_path),
+            }
+        )
+
     output_file = output_root / f"daily_retrain_{args.model_version}.json"
     output_file.write_text(json.dumps(run_report, indent=2), encoding="utf-8")
     event_path = log_experiment_event(
@@ -223,6 +442,11 @@ def main() -> None:
             "report": str(output_file),
             "summary_report": str(PROJECT_ROOT / train_output),
             "promotion_report": str(PROJECT_ROOT / promote_output),
+            "quality_report": str(PROJECT_ROOT / quality_report_path) if args.enforce_data_quality else None,
+            "sla_report": str(PROJECT_ROOT / sla_report_path) if args.enforce_sla else None,
+            "ci_gate_report": str(PROJECT_ROOT / ci_gate_report_path) if args.enforce_ci_gate else None,
+            "scorecard_report": str(PROJECT_ROOT / scorecard_output_path) if not args.skip_scorecard else None,
+            "model_card": str(PROJECT_ROOT / model_card_output_path) if not args.skip_scorecard else None,
         },
     )
 
@@ -237,8 +461,14 @@ def main() -> None:
                 "summary_report": str(PROJECT_ROOT / train_output),
                 "promotion_report": str(PROJECT_ROOT / promote_output),
                 "quality_report": str(PROJECT_ROOT / quality_report_path) if args.enforce_data_quality else None,
+                "sla_report": str(PROJECT_ROOT / sla_report_path) if args.enforce_sla else None,
+                "ci_gate_report": str(PROJECT_ROOT / ci_gate_report_path) if args.enforce_ci_gate else None,
+                "scorecard_report": str(PROJECT_ROOT / scorecard_output_path) if not args.skip_scorecard else None,
+                "model_card": str(PROJECT_ROOT / model_card_output_path) if not args.skip_scorecard else None,
                 "experiment_events_path": str(event_path),
                 "ingestion_enabled": settings.ingestion_enabled,
+                "effective_symbols": effective_symbols if effective_symbols else None,
+                "effective_horizons": effective_horizons if effective_horizons else None,
             },
             indent=2,
         )

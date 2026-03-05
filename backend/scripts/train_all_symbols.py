@@ -43,6 +43,12 @@ def _parse_symbols(raw: str) -> list[str]:
     return sorted(set(symbols))
 
 
+def _parse_horizons(raw: str) -> list[str]:
+    """Parse horizons. Internal helper."""
+    horizons = [item.strip().lower() for item in raw.split(",") if item.strip()]
+    return sorted(set(horizons))
+
+
 def _sha256_file(path: Path) -> str:
     """Internal helper to compute sha256 file."""
     digest = hashlib.sha256()
@@ -72,6 +78,11 @@ def main() -> None:
         help="Optional comma-separated explicit symbol set (example: BTC-USD,ETH-USD,SOL-USD)",
     )
     parser.add_argument(
+        "--horizons",
+        default="",
+        help="Optional comma-separated horizon subset (example: 6h,12h,1d)",
+    )
+    parser.add_argument(
         "--allow-existing-version",
         action="store_true",
         help="Allow training into an existing model version folder (disabled by default for immutability)",
@@ -79,12 +90,12 @@ def main() -> None:
     args = parser.parse_args()
     settings = get_settings()
 
-    discovered_universe = asyncio.run(_resolve_universe(args.symbol_limit))
     requested_symbols = _parse_symbols(args.symbols)
     if requested_symbols:
-        allowed = set(discovered_universe)
+        allowed = set(list_symbols_with_any_candles(min_rows=100))
         universe = [symbol for symbol in requested_symbols if symbol in allowed]
     else:
+        discovered_universe = asyncio.run(_resolve_universe(args.symbol_limit))
         universe = discovered_universe
 
     models_root = PROJECT_ROOT / "data" / "models"
@@ -99,6 +110,13 @@ def main() -> None:
         )
 
     horizon_specs = all_horizon_specs()
+    requested_horizons = _parse_horizons(args.horizons)
+    if requested_horizons:
+        allowed = {spec.label for spec in horizon_specs}
+        selected = [spec for spec in horizon_specs if spec.label in requested_horizons and spec.label in allowed]
+        if not selected:
+            raise SystemExit("No valid horizons selected; check --horizons values")
+        horizon_specs = selected
 
     aggregate: dict[str, object] = {
         "generated_at": datetime.now(tz=UTC).isoformat(),
@@ -108,9 +126,12 @@ def main() -> None:
             "count": len(universe),
             "symbols": universe,
         },
+        "selected_horizons": [spec.label for spec in horizon_specs],
         "promotion_gate": {
             "classification": ["f1 > baseline.f1", "accuracy > baseline.accuracy"],
             "regression": ["rmse < baseline.rmse"],
+            "execution": ["net_mean_return > baseline.net_mean_return (if enabled)"],
+            "risk": ["max_drawdown >= configured floor and baseline floor"],
             "stochastic": ["abs(residual_acf1) <= 0.10"],
         },
         "training_config": {

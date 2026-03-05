@@ -37,6 +37,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - `GET /api/v1/health` service health status
 - `GET /api/v1/health/data-readiness` latest data-quality snapshot for training gate readiness
 - `GET /api/v1/health/source-health?hours=24` source reliability telemetry summary
+- `GET /api/v1/health/model-scorecard` latest model scorecard snapshot
 - `GET /api/v1/markets/symbols?quote=USD` tradable symbols catalog
 - `GET /api/v1/market-data/candles?symbol=BTC-USD&granularity=1h&limit=200` OHLCV candles
 - `GET /api/v1/market-data/ticker?symbol=BTC-USD` latest ticker
@@ -60,6 +61,9 @@ Background ingestion loop:
   `MARKET_DATA_TERTIARY_SOURCE_ENABLED`,
   `MARKET_DATA_TERTIARY_SOURCE_BASE_URL` (tertiary, CryptoCompare),
   `MARKET_DATA_TERTIARY_SOURCE_API_KEY` (optional).
+  Phase-1 focus controls:
+  `PHASE1_FOCUS_SYMBOLS` (default `BTC-USD,ETH-USD,SOL-USD`),
+  `PHASE1_FOCUS_HORIZONS` (default `6h,12h,1d`).
 
 Source telemetry:
 
@@ -86,6 +90,7 @@ Generate data quality report:
 python scripts/data_quality_report.py \
   --symbols BTC-USD,ETH-USD,SOL-USD \
   --granularities 1m,5m,15m,1h,6h,1d \
+  --min-coverage-ratio-map 1m:0.80,5m:0.82,15m:0.85,1h:0.88,6h:0.90,1d:0.92 \
   --output reports/data_quality_report.json
 ```
 
@@ -103,6 +108,16 @@ python scripts/daily_retrain.py \
   --phase phase3 \
   --enforce-data-quality \
   --symbols BTC-USD,ETH-USD,SOL-USD
+```
+
+Run explicit SLA gate (quality + source uptime):
+
+```bash
+python scripts/sla_gate.py \
+  --require-quality-pass \
+  --min-live-source-ratio 0.70 \
+  --max-stale-cache-ratio 0.30 \
+  --output reports/sla_gate_report.json
 ```
 
 ## Baseline Accuracy Evaluation
@@ -128,6 +143,16 @@ Train candidate models for all tradable symbols and all supported horizons:
 
 ```bash
 python scripts/train_all_symbols.py --model-version daily-20260213-020000 --output reports/summary_report.json
+```
+
+Lock to core phase-1 wedge only:
+
+```bash
+python scripts/train_all_symbols.py \
+  --model-version core-$(date +%Y%m%d-%H%M%S) \
+  --symbols BTC-USD,ETH-USD,SOL-USD \
+  --horizons 6h,12h,1d \
+  --output reports/summary_report_core.json
 ```
 
 Training targets horizons:
@@ -184,6 +209,16 @@ Promote a trained candidate version:
 
 ```bash
 python scripts/promote_model.py --candidate daily-20260213-020000 --active daily-20260212-020000 --phase phase1
+```
+
+Require CI gate before promotion:
+
+```bash
+python scripts/promote_model.py \
+  --candidate <version> \
+  --phase phase1 \
+  --require-ci-gate \
+  --ci-gate-report reports/ci_gate_latest.json
 ```
 
 To merge newly passing pairs into the existing promoted registry (recommended for targeted retrains):
@@ -256,6 +291,9 @@ Reports:
   - `META_LABEL_MIN_MOVE_BPS=8.0`
   - `META_LABEL_MIN_TAKE_RATE=0.05`
   - `CONFORMAL_ALPHA=0.10`
+  - `SLA_MIN_LIVE_SOURCE_RATIO=0.70`
+  - `SLA_MAX_STALE_CACHE_RATIO=0.30`
+  - `CI_GATE_MAX_AGE_HOURS=24`
   - `EXECUTION_FEE_BPS=4.0`
   - `EXECUTION_SLIPPAGE_BPS=3.0`
   - `EXECUTION_MAX_TURNOVER_PER_STEP=1.0`
@@ -276,6 +314,18 @@ Reports:
 python scripts/daily_retrain.py --phase phase3
 ```
 
+Phase-1 strict startup run (core symbols + core horizons + gates):
+
+```bash
+python scripts/daily_retrain.py \
+  --phase phase1 \
+  --enforce-data-quality \
+  --enforce-sla \
+  --enforce-ci-gate \
+  --symbols BTC-USD,ETH-USD,SOL-USD \
+  --horizons 6h,12h,1d
+```
+
 This command runs:
 
 1. `run_ingestion_cycle()`
@@ -287,6 +337,14 @@ Outputs:
 - `backend/reports/daily_retrain_<model_version>.json`
 - `backend/reports/summary_report_<model_version>.json`
 - `backend/reports/promotion_report_<model_version>.json`
+- `backend/reports/scorecard_<model_version>.json`
+- `docs/model-cards/<model_version>.md`
+
+Additional operations scripts:
+
+- `python scripts/ci_gate.py --output reports/ci_gate_latest.json`
+- `python scripts/daily_scorecard.py --output reports/scorecard_latest.json`
+- `python scripts/generate_model_card.py --model-version <version>`
 
 ### One-command reproducibility bundle
 
