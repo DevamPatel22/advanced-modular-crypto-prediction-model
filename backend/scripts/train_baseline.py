@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""CLI wrapper to generate baseline metrics report for a single symbol."""
+
 from __future__ import annotations
 
 import argparse
@@ -14,6 +16,7 @@ from app.ml.baseline_training import run_baseline_report
 
 
 def main() -> None:
+    """Run the script entrypoint."""
     parser = argparse.ArgumentParser(description="Train/evaluate baseline models and emit metrics report")
     parser.add_argument("--symbol", default="BTC-USD", help="Symbol to evaluate (default: BTC-USD)")
     parser.add_argument(

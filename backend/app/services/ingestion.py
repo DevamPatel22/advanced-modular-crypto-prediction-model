@@ -1,3 +1,5 @@
+"""Background ingestion service for periodic candle refresh across tradable symbols."""
+
 from __future__ import annotations
 
 import asyncio
@@ -11,16 +13,19 @@ SUPPORTED_GRANULARITIES = {"1m", "5m", "15m", "1h", "6h", "1d"}
 
 
 def _parse_granularities(raw: str) -> list[str]:
+    """Parse granularities. Internal helper."""
     values = [value.strip() for value in raw.split(",") if value.strip()]
     filtered = [value for value in values if value in SUPPORTED_GRANULARITIES]
     return filtered or ["1h"]
 
 
 def _parse_symbol_list(raw: str) -> list[str]:
+    """Parse symbol list. Internal helper."""
     return [value.strip().upper() for value in raw.split(",") if value.strip()]
 
 
 async def run_ingestion_cycle() -> None:
+    """Run ingestion cycle."""
     settings = get_settings()
     symbols = await fetch_symbols_by_quote(
         quote=settings.ingestion_quote_currency,
@@ -68,6 +73,7 @@ async def run_ingestion_cycle() -> None:
 
 
 async def run_ingestion_loop(stop_event: asyncio.Event) -> None:
+    """Run ingestion loop."""
     settings = get_settings()
     cycle_seconds = max(settings.ingestion_cycle_seconds, 60)
     while not stop_event.is_set():

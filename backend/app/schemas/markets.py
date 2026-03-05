@@ -1,3 +1,5 @@
+"""Pydantic contracts for tradable symbol discovery responses."""
+
 from pydantic import BaseModel, Field
 
 
@@ -13,4 +15,3 @@ class MarketSymbolsResponse(BaseModel):
     count: int
     symbols: list[MarketSymbol]
     source: str
-

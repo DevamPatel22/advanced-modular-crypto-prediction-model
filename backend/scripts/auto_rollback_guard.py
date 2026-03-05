@@ -21,6 +21,7 @@ from app.services.model_registry import ModelRegistry
 
 
 def _find_rollback_target(registry_payload: dict[str, object], active_version: str) -> tuple[str | None, dict[str, dict[str, bool]] | None]:
+    """Find rollback target. Internal helper."""
     history = registry_payload.get("history", [])
     if not isinstance(history, list):
         return None, None
@@ -45,6 +46,7 @@ def _find_rollback_target(registry_payload: dict[str, object], active_version: s
 
 
 def main() -> None:
+    """Run the script entrypoint."""
     parser = argparse.ArgumentParser(description="Auto-rollback guard based on data quality and source health")
     parser.add_argument("--hours", type=int, default=24, help="Source-health lookback window")
     parser.add_argument("--max-stale-cache-ratio", type=float, default=0.35, help="Rollback trigger stale-cache ratio")

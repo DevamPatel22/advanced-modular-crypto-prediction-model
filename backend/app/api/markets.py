@@ -1,3 +1,5 @@
+"""Tradable symbol discovery endpoints."""
+
 from fastapi import APIRouter, Query
 
 from app.schemas.markets import MarketSymbolsResponse
@@ -11,6 +13,7 @@ async def list_symbols(
     quote: str = Query(default="USD", min_length=3, max_length=6),
     limit: int = Query(default=300, ge=1, le=2000),
 ) -> MarketSymbolsResponse:
+    """List symbols."""
     normalized_quote = quote.upper()
     symbols = await fetch_symbols_by_quote(normalized_quote, limit=limit)
     return MarketSymbolsResponse(
@@ -19,4 +22,3 @@ async def list_symbols(
         symbols=symbols,
         source="coinbase_exchange_products",
     )
-

@@ -1,3 +1,5 @@
+"""Baseline evaluation helper for quick symbol-level training diagnostics."""
+
 from __future__ import annotations
 
 import json
@@ -8,6 +10,7 @@ from app.ml.training import all_horizon_specs, evaluate_symbol_horizon
 
 
 def run_baseline_report(symbol: str, output_path: Path | None = None) -> dict[str, object]:
+    """Run baseline report."""
     normalized_symbol = symbol.upper().strip()
     model_version = "baseline-eval"
 

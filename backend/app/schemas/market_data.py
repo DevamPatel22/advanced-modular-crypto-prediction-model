@@ -1,3 +1,5 @@
+"""Pydantic contracts for market data API responses."""
+
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -31,4 +33,3 @@ class TickerResponse(BaseModel):
     volume: float | None = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str
-
