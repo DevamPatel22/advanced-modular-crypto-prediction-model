@@ -158,6 +158,7 @@ def execution_aware_metrics(
     fee_bps: float,
     slippage_bps: float,
     max_turnover_per_step: float,
+    position_signal: np.ndarray | None = None,
 ) -> dict[str, float]:
     """Compute execution aware metrics."""
     current = np.asarray(current_close, dtype=float)
@@ -176,7 +177,10 @@ def execution_aware_metrics(
         }
 
     raw_returns = (target / np.clip(current, 1e-12, None)) - 1.0
-    desired_positions = np.where(signal == 1, 1.0, -1.0)
+    if position_signal is not None:
+        desired_positions = np.clip(np.asarray(position_signal, dtype=float), -1.0, 1.0)
+    else:
+        desired_positions = np.where(signal == 1, 1.0, -1.0)
     # Turnover cap is converted into max position delta per step.
     max_turnover_per_step = float(np.clip(max_turnover_per_step, 0.0, 1.0))
     max_position_delta = max_turnover_per_step * 2.0
@@ -375,6 +379,7 @@ def paper_trading_metrics(
     slippage_bps: float,
     max_turnover_per_step: float,
     initial_capital: float = 10_000.0,
+    position_signal: np.ndarray | None = None,
 ) -> dict[str, float]:
     """Compute paper trading metrics."""
     current = np.asarray(current_close, dtype=float)
@@ -389,7 +394,10 @@ def paper_trading_metrics(
     start_capital = max(float(initial_capital), 100.0)
     max_turnover_per_step = float(np.clip(max_turnover_per_step, 0.0, 1.0))
     max_position_delta = max_turnover_per_step * 2.0
-    desired_positions = np.where(signal == 1, 1.0, -1.0).astype(float)
+    if position_signal is not None:
+        desired_positions = np.clip(np.asarray(position_signal, dtype=float), -1.0, 1.0).astype(float)
+    else:
+        desired_positions = np.where(signal == 1, 1.0, -1.0).astype(float)
     positions = np.zeros_like(desired_positions, dtype=float)
     for idx, desired in enumerate(desired_positions):
         if idx == 0:

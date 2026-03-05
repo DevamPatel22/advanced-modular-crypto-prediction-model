@@ -28,6 +28,9 @@ Build a reliable, scalable prediction platform that can evolve from MVP analytic
 - Dual regression target selection (`log_return` and residual-from-persistence) with clipped transforms and staged martingale gate (`bootstrap` to `strict`)
 - Validation-optimized regression blend (`regression_blend_alpha`) persisted per symbol/horizon for inference stability
 - Inference reliability guard: low-confidence model outputs can abstain to safe fallback based on config threshold
+- Meta-labeling policy layer to abstain from low-edge trades even when base direction is available
+- Conformal prediction intervals in API output (`conformal_low_usd`, `conformal_high_usd`, `conformal_confidence`)
+- Promotion gate now includes execution/risk constraints (net mean return vs baseline and drawdown floor)
 - Source credibility safeguards in market data ingestion (integrity/freshness/divergence checks)
 - Bootstrap promotions now focus on short horizons first (`5m,1h,3h,6h,12h`) for faster first qualified pairs
 - Interactive frontend with:

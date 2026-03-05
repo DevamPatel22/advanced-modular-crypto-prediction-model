@@ -34,7 +34,7 @@ class FeaturePipelineTests(unittest.TestCase):
     def test_feature_version_locked(self) -> None:
         if build_features is None:
             self.skipTest("feature dependencies not available")
-        self.assertEqual(FEATURE_VERSION, "v2")
+        self.assertEqual(FEATURE_VERSION, "v3")
 
     @unittest.skipIf(np is None or pd is None or build_features is None, "numpy/pandas not available in environment")
     def test_feature_generation_deterministic(self) -> None:

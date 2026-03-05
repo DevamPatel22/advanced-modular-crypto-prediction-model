@@ -155,6 +155,18 @@ class ClassifierValidationCandidate:
     score: float
 
 
+@dataclass(frozen=True)
+class MetaLabelingResult:
+    enabled: bool
+    model: Pipeline | None
+    threshold: float
+    min_take_rate: float
+    val_take_rate: float
+    val_net_mean_return: float
+    val_max_drawdown: float
+    reason: str | None = None
+
+
 class ProbabilityBlendClassifier:
     def __init__(self, models: list[object], weights: list[float]) -> None:
         """Initialize ProbabilityBlendClassifier state."""
@@ -1481,6 +1493,273 @@ def _train_regime_models(split: SplitData, horizon: str) -> tuple[dict[str, Pipe
     return cls_models, reg_models
 
 
+def _frame_column(frame: pd.DataFrame, column: str, default: float = 0.0) -> np.ndarray:
+    """Internal helper to compute frame column."""
+    if column not in frame.columns:
+        return np.full(len(frame), float(default), dtype=float)
+    return frame[column].to_numpy(dtype=float)
+
+
+def _predict_outputs_with_regime(
+    *,
+    x: pd.DataFrame,
+    current_close: np.ndarray,
+    regime_ids: np.ndarray,
+    horizon: str,
+    classifier_model: object,
+    regressor_model: object,
+    regression_target: str,
+    regression_blend_alpha: float,
+    directional_tilt_gamma: float,
+    regime_cls_models: dict[str, Pipeline] | None = None,
+    regime_reg_models: dict[str, Pipeline] | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Internal helper to compute predict outputs with regime."""
+    cls_prob = np.asarray(classifier_model.predict_proba(x)[:, 1], dtype=float)
+    reg_raw = np.asarray(regressor_model.predict(x), dtype=float)
+    reg_pred = regression_output_to_close(
+        raw_prediction=reg_raw,
+        current_close=current_close,
+        horizon=horizon,
+        regression_target=regression_target,
+    )
+
+    if regime_cls_models or regime_reg_models:
+        regime_names = {0: "down", 1: "flat", 2: "up"}
+        for regime_id, regime_name in regime_names.items():
+            mask = regime_ids == regime_id
+            if not np.any(mask):
+                continue
+            if regime_cls_models and regime_name in regime_cls_models:
+                cls_prob[mask] = np.asarray(regime_cls_models[regime_name].predict_proba(x.iloc[mask])[:, 1], dtype=float)
+            if regime_reg_models and regime_name in regime_reg_models:
+                regime_raw = np.asarray(regime_reg_models[regime_name].predict(x.iloc[mask]), dtype=float)
+                reg_pred[mask] = regression_output_to_close(
+                    raw_prediction=regime_raw,
+                    current_close=current_close[mask],
+                    horizon=horizon,
+                    regression_target=regression_target,
+                )
+
+    blend_alpha = float(np.clip(regression_blend_alpha, 0.0, 1.0))
+    reg_pred = (blend_alpha * reg_pred) + ((1.0 - blend_alpha) * current_close)
+    reg_pred = apply_directional_tilt_to_close(
+        predicted_close=reg_pred,
+        current_close=current_close,
+        probability_up=cls_prob,
+        volatility_feature=_frame_column(x, "volatility_20", default=0.0),
+        horizon=horizon,
+        gamma=float(directional_tilt_gamma),
+    )
+    return cls_prob, reg_pred
+
+
+def _meta_feature_frame(
+    *,
+    x: pd.DataFrame,
+    prob_up: np.ndarray,
+    decision_threshold: float,
+    predicted_close: np.ndarray,
+    current_close: np.ndarray,
+) -> pd.DataFrame:
+    """Internal helper to compute meta feature frame."""
+    safe_current = np.clip(np.asarray(current_close, dtype=float), 1e-12, None)
+    pred_return = (np.asarray(predicted_close, dtype=float) / safe_current) - 1.0
+    prob = np.asarray(prob_up, dtype=float)
+    edge = np.abs(prob - float(decision_threshold))
+
+    return pd.DataFrame(
+        {
+            "prob_up": prob,
+            "prob_edge": edge,
+            "pred_return": pred_return,
+            "abs_pred_return": np.abs(pred_return),
+            "volatility_20": _frame_column(x, "volatility_20", default=0.0),
+            "markov_prob_down": _frame_column(x, "markov_prob_down", default=0.33),
+            "markov_prob_flat": _frame_column(x, "markov_prob_flat", default=0.34),
+            "markov_prob_up": _frame_column(x, "markov_prob_up", default=0.33),
+        }
+    )
+
+
+def _meta_labels(
+    *,
+    prob_up: np.ndarray,
+    decision_threshold: float,
+    current_close: np.ndarray,
+    target_close: np.ndarray,
+    min_move_bps: float,
+) -> np.ndarray:
+    """Internal helper to compute meta labels."""
+    direction_pred_up = np.asarray(prob_up, dtype=float) >= float(decision_threshold)
+    direction_true_up = np.asarray(target_close, dtype=float) > np.asarray(current_close, dtype=float)
+    realized_abs_return = np.abs((np.asarray(target_close, dtype=float) / np.clip(np.asarray(current_close, dtype=float), 1e-12, None)) - 1.0)
+    min_move = max(float(min_move_bps), 0.0) / 10000.0
+    labels = (direction_pred_up == direction_true_up) & (realized_abs_return >= min_move)
+    return labels.astype(int)
+
+
+def _select_meta_threshold(
+    *,
+    current_close: np.ndarray,
+    target_close: np.ndarray,
+    cls_prob: np.ndarray,
+    meta_prob: np.ndarray,
+    decision_threshold: float,
+    horizon: str,
+    min_take_rate: float,
+    fee_bps: float,
+    slippage_bps: float,
+    max_turnover_per_step: float,
+) -> tuple[float, float, float, float]:
+    """Internal helper to compute select meta threshold."""
+    best_threshold = 0.50
+    best_take_rate = 0.0
+    best_net_mean_return = -math.inf
+    best_max_drawdown = -1.0
+    min_take = float(np.clip(min_take_rate, 0.0, 1.0))
+    direction_signal = np.where(np.asarray(cls_prob, dtype=float) >= float(decision_threshold), 1.0, -1.0)
+
+    for threshold in np.linspace(0.35, 0.90, 56):
+        action = (np.asarray(meta_prob, dtype=float) >= float(threshold)).astype(float)
+        take_rate = float(np.mean(action)) if action.size else 0.0
+        if take_rate < min_take:
+            continue
+        signed_positions = direction_signal * action
+        execution = execution_aware_metrics(
+            current_close=current_close,
+            target_close=target_close,
+            direction_up=(direction_signal > 0).astype(int),
+            horizon=horizon,
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
+            max_turnover_per_step=max_turnover_per_step,
+            position_signal=signed_positions,
+        )
+        net_mean_return = float(execution.get("net_mean_return", math.nan))
+        if not math.isfinite(net_mean_return):
+            continue
+        drawdown = float(execution.get("max_drawdown_net", -1.0))
+        if (net_mean_return > best_net_mean_return) or (
+            math.isclose(net_mean_return, best_net_mean_return, rel_tol=1e-12, abs_tol=1e-12)
+            and drawdown > best_max_drawdown
+        ):
+            best_threshold = float(threshold)
+            best_take_rate = take_rate
+            best_net_mean_return = net_mean_return
+            best_max_drawdown = drawdown
+
+    return best_threshold, best_take_rate, best_net_mean_return, best_max_drawdown
+
+
+def _train_meta_labeler(
+    *,
+    split: SplitData,
+    horizon: str,
+    decision_threshold: float,
+    cls_prob_train: np.ndarray,
+    cls_prob_val: np.ndarray,
+    reg_pred_train: np.ndarray,
+    reg_pred_val: np.ndarray,
+) -> MetaLabelingResult:
+    """Internal helper to compute train meta labeler."""
+    settings = get_settings()
+    min_move_bps = float(settings.meta_label_min_move_bps)
+    y_train_meta = _meta_labels(
+        prob_up=cls_prob_train,
+        decision_threshold=decision_threshold,
+        current_close=split.current_close_train,
+        target_close=split.target_close_train,
+        min_move_bps=min_move_bps,
+    )
+    if len(np.unique(y_train_meta)) < 2:
+        return MetaLabelingResult(
+            enabled=False,
+            model=None,
+            threshold=0.5,
+            min_take_rate=float(settings.meta_label_min_take_rate),
+            val_take_rate=0.0,
+            val_net_mean_return=math.nan,
+            val_max_drawdown=math.nan,
+            reason="insufficient_meta_label_class_balance",
+        )
+
+    x_train_meta = _meta_feature_frame(
+        x=split.x_train,
+        prob_up=cls_prob_train,
+        decision_threshold=decision_threshold,
+        predicted_close=reg_pred_train,
+        current_close=split.current_close_train,
+    )
+    x_val_meta = _meta_feature_frame(
+        x=split.x_val,
+        prob_up=cls_prob_val,
+        decision_threshold=decision_threshold,
+        predicted_close=reg_pred_val,
+        current_close=split.current_close_val,
+    )
+
+    meta_model = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", StandardScaler()),
+            ("model", LogisticRegression(max_iter=1200, class_weight="balanced", random_state=42)),
+        ]
+    )
+    meta_model.fit(x_train_meta, y_train_meta)
+    val_meta_prob = np.asarray(meta_model.predict_proba(x_val_meta)[:, 1], dtype=float)
+    threshold, take_rate, net_mean_return, max_drawdown = _select_meta_threshold(
+        current_close=split.current_close_val,
+        target_close=split.target_close_val,
+        cls_prob=cls_prob_val,
+        meta_prob=val_meta_prob,
+        decision_threshold=decision_threshold,
+        horizon=horizon,
+        min_take_rate=float(settings.meta_label_min_take_rate),
+        fee_bps=float(settings.execution_fee_bps),
+        slippage_bps=float(settings.execution_slippage_bps),
+        max_turnover_per_step=float(settings.execution_max_turnover_per_step),
+    )
+    if not math.isfinite(net_mean_return):
+        return MetaLabelingResult(
+            enabled=False,
+            model=None,
+            threshold=float(threshold),
+            min_take_rate=float(settings.meta_label_min_take_rate),
+            val_take_rate=float(take_rate),
+            val_net_mean_return=math.nan,
+            val_max_drawdown=math.nan,
+            reason="meta_threshold_search_failed",
+        )
+
+    return MetaLabelingResult(
+        enabled=True,
+        model=meta_model,
+        threshold=float(threshold),
+        min_take_rate=float(settings.meta_label_min_take_rate),
+        val_take_rate=float(take_rate),
+        val_net_mean_return=float(net_mean_return),
+        val_max_drawdown=float(max_drawdown),
+        reason=None,
+    )
+
+
+def _conformal_quantile(
+    *,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    alpha: float,
+) -> tuple[float, float]:
+    """Internal helper to compute conformal quantile."""
+    level = float(np.clip(alpha, 0.01, 0.40))
+    residual = np.abs(np.asarray(y_true, dtype=float) - np.asarray(y_pred, dtype=float))
+    if residual.size == 0:
+        return 0.0, 0.0
+    q_abs = float(np.quantile(residual, 1.0 - level))
+    coverage = float(np.mean(residual <= q_abs))
+    return max(q_abs, 0.0), float(np.clip(coverage, 0.0, 1.0))
+
+
 def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, models_root: Path, write_artifacts: bool = True) -> dict[str, object]:
     """Evaluate symbol horizon."""
     min_samples = min_samples_for_horizon(spec.label)
@@ -1518,76 +1797,116 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         regime_cls_models, regime_reg_models = _train_regime_models(split, spec.label)
 
     reg_blend_alpha = float(np.clip(reg_best.regression_blend_alpha, 0.0, 1.0))
-    val_cls_prob = cls_best.model.predict_proba(split.x_val)[:, 1]
-    val_reg_raw = np.asarray(reg_best.model.predict(split.x_val), dtype=float)
-    val_model_pred_close = regression_output_to_close(
-        raw_prediction=val_reg_raw,
+    val_cls_prob_pretilt, val_reg_pred_pretilt = _predict_outputs_with_regime(
+        x=split.x_val,
         current_close=split.current_close_val,
+        regime_ids=split.regime_val,
         horizon=spec.label,
+        classifier_model=cls_best.model,
+        regressor_model=reg_best.model,
         regression_target=reg_best.regression_target,
+        regression_blend_alpha=reg_blend_alpha,
+        directional_tilt_gamma=0.0,
+        regime_cls_models=regime_cls_models,
+        regime_reg_models=regime_reg_models,
     )
-    val_reg_pred = (reg_blend_alpha * val_model_pred_close) + ((1.0 - reg_blend_alpha) * split.current_close_val)
-    val_rmse_before_tilt = float(math.sqrt(mean_squared_error(split.target_close_val, val_reg_pred)))
-    val_vol_feature = (
-        split.x_val["volatility_20"].to_numpy(dtype=float)
-        if "volatility_20" in split.x_val.columns
-        else np.zeros(len(split.x_val), dtype=float)
-    )
+    val_rmse_before_tilt = float(math.sqrt(mean_squared_error(split.target_close_val, val_reg_pred_pretilt)))
     directional_tilt_gamma, val_rmse_after_tilt = _best_directional_tilt_gamma(
         y_true=split.target_close_val,
         current_close=split.current_close_val,
-        base_pred_close=val_reg_pred,
-        prob_up=val_cls_prob,
-        volatility_20=val_vol_feature,
+        base_pred_close=val_reg_pred_pretilt,
+        prob_up=val_cls_prob_pretilt,
+        volatility_20=_frame_column(split.x_val, "volatility_20", default=0.0),
         horizon=spec.label,
     )
-
-    cls_prob = cls_best.model.predict_proba(split.x_test)[:, 1]
-    cls_pred = (cls_prob >= cls_best.decision_threshold).astype(int)
-    reg_raw = np.asarray(reg_best.model.predict(split.x_test), dtype=float)
-    reg_pred = regression_output_to_close(
-        raw_prediction=reg_raw,
-        current_close=split.current_close_test,
+    val_cls_prob, val_reg_pred = _predict_outputs_with_regime(
+        x=split.x_val,
+        current_close=split.current_close_val,
+        regime_ids=split.regime_val,
         horizon=spec.label,
+        classifier_model=cls_best.model,
+        regressor_model=reg_best.model,
         regression_target=reg_best.regression_target,
+        regression_blend_alpha=reg_blend_alpha,
+        directional_tilt_gamma=directional_tilt_gamma,
+        regime_cls_models=regime_cls_models,
+        regime_reg_models=regime_reg_models,
     )
 
-    if settings.regime_models_enabled and (regime_cls_models or regime_reg_models):
-        blended_prob = cls_prob.copy()
-        blended_reg = reg_pred.copy()
-        regime_names = {0: "down", 1: "flat", 2: "up"}
-        for regime_id, regime_name in regime_names.items():
-            mask = split.regime_test == regime_id
-            if not np.any(mask):
-                continue
-            if regime_name in regime_cls_models:
-                regime_prob = regime_cls_models[regime_name].predict_proba(split.x_test.iloc[mask])[:, 1]
-                blended_prob[mask] = regime_prob
-            if regime_name in regime_reg_models:
-                regime_raw = np.asarray(regime_reg_models[regime_name].predict(split.x_test.iloc[mask]), dtype=float)
-                blended_reg[mask] = regression_output_to_close(
-                    raw_prediction=regime_raw,
-                    current_close=split.current_close_test[mask],
-                    horizon=spec.label,
-                    regression_target=reg_best.regression_target,
-                )
-        cls_prob = blended_prob
-        cls_pred = (cls_prob >= cls_best.decision_threshold).astype(int)
-        reg_pred = blended_reg
-
-    reg_pred = (reg_blend_alpha * reg_pred) + ((1.0 - reg_blend_alpha) * split.current_close_test)
-    test_vol_feature = (
-        split.x_test["volatility_20"].to_numpy(dtype=float)
-        if "volatility_20" in split.x_test.columns
-        else np.zeros(len(split.x_test), dtype=float)
-    )
-    reg_pred = apply_directional_tilt_to_close(
-        predicted_close=reg_pred,
+    cls_prob, reg_pred = _predict_outputs_with_regime(
+        x=split.x_test,
         current_close=split.current_close_test,
-        probability_up=cls_prob,
-        volatility_feature=test_vol_feature,
+        regime_ids=split.regime_test,
         horizon=spec.label,
-        gamma=directional_tilt_gamma,
+        classifier_model=cls_best.model,
+        regressor_model=reg_best.model,
+        regression_target=reg_best.regression_target,
+        regression_blend_alpha=reg_blend_alpha,
+        directional_tilt_gamma=directional_tilt_gamma,
+        regime_cls_models=regime_cls_models,
+        regime_reg_models=regime_reg_models,
+    )
+    cls_pred = (cls_prob >= cls_best.decision_threshold).astype(int)
+
+    cls_prob_train, reg_pred_train = _predict_outputs_with_regime(
+        x=split.x_train,
+        current_close=split.current_close_train,
+        regime_ids=split.regime_train,
+        horizon=spec.label,
+        classifier_model=cls_best.model,
+        regressor_model=reg_best.model,
+        regression_target=reg_best.regression_target,
+        regression_blend_alpha=reg_blend_alpha,
+        directional_tilt_gamma=directional_tilt_gamma,
+        regime_cls_models=regime_cls_models,
+        regime_reg_models=regime_reg_models,
+    )
+
+    meta_result = MetaLabelingResult(
+        enabled=False,
+        model=None,
+        threshold=0.5,
+        min_take_rate=float(settings.meta_label_min_take_rate),
+        val_take_rate=1.0,
+        val_net_mean_return=math.nan,
+        val_max_drawdown=math.nan,
+        reason="meta_labeling_disabled",
+    )
+    if bool(settings.meta_labeling_enabled):
+        meta_result = _train_meta_labeler(
+            split=split,
+            horizon=spec.label,
+            decision_threshold=float(cls_best.decision_threshold),
+            cls_prob_train=cls_prob_train,
+            cls_prob_val=val_cls_prob,
+            reg_pred_train=reg_pred_train,
+            reg_pred_val=val_reg_pred,
+        )
+
+    if meta_result.enabled and meta_result.model is not None:
+        x_test_meta = _meta_feature_frame(
+            x=split.x_test,
+            prob_up=cls_prob,
+            decision_threshold=float(cls_best.decision_threshold),
+            predicted_close=reg_pred,
+            current_close=split.current_close_test,
+        )
+        meta_prob_test = np.asarray(meta_result.model.predict_proba(x_test_meta)[:, 1], dtype=float)
+        action_mask_test = meta_prob_test >= float(meta_result.threshold)
+    else:
+        meta_prob_test = np.ones(len(split.x_test), dtype=float)
+        action_mask_test = np.ones(len(split.x_test), dtype=bool)
+
+    signed_positions_test = np.where(cls_pred == 1, 1.0, -1.0) * action_mask_test.astype(float)
+    conformal_q_abs_usd, conformal_val_coverage = _conformal_quantile(
+        y_true=split.target_close_val,
+        y_pred=val_reg_pred,
+        alpha=float(settings.conformal_alpha),
+    )
+    conformal_test_coverage = (
+        float(np.mean(np.abs(split.target_close_test - reg_pred) <= conformal_q_abs_usd))
+        if conformal_q_abs_usd > 0
+        else 0.0
     )
 
     metrics = _metrics(
@@ -1618,6 +1937,26 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         y_true_reg=split.target_close_test,
         current_close=split.current_close_test,
     )
+    baseline_execution_metrics = execution_aware_metrics(
+        current_close=split.current_close_test,
+        target_close=split.target_close_test,
+        direction_up=np.ones_like(cls_pred),
+        horizon=spec.label,
+        fee_bps=float(settings.execution_fee_bps),
+        slippage_bps=float(settings.execution_slippage_bps),
+        max_turnover_per_step=float(settings.execution_max_turnover_per_step),
+        position_signal=np.ones_like(split.current_close_test, dtype=float),
+    )
+    baseline_paper_trading = paper_trading_metrics(
+        current_close=split.current_close_test,
+        target_close=split.target_close_test,
+        direction_up=np.ones_like(cls_pred),
+        fee_bps=float(settings.execution_fee_bps),
+        slippage_bps=float(settings.execution_slippage_bps),
+        max_turnover_per_step=float(settings.execution_max_turnover_per_step),
+        initial_capital=float(settings.paper_trade_initial_capital),
+        position_signal=np.ones_like(split.current_close_test, dtype=float),
+    )
     execution_metrics = execution_aware_metrics(
         current_close=split.current_close_test,
         target_close=split.target_close_test,
@@ -1626,6 +1965,7 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         fee_bps=float(settings.execution_fee_bps),
         slippage_bps=float(settings.execution_slippage_bps),
         max_turnover_per_step=float(settings.execution_max_turnover_per_step),
+        position_signal=signed_positions_test,
     )
     paper_trading = paper_trading_metrics(
         current_close=split.current_close_test,
@@ -1635,6 +1975,7 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         slippage_bps=float(settings.execution_slippage_bps),
         max_turnover_per_step=float(settings.execution_max_turnover_per_step),
         initial_capital=float(settings.paper_trade_initial_capital),
+        position_signal=signed_positions_test,
     )
     walk_forward_gate = strict_gate_walk_forward_diagnostic(
         y_true_cls=split.y_test_cls,
@@ -1654,11 +1995,33 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
     if walk_forward_enforced:
         walk_forward_pass = bool(walk_forward_gate.get("enabled")) and bool(walk_forward_gate.get("strict_pass_all_folds"))
 
+    pnl_gate_enabled = bool(settings.promotion_require_pnl_above_baseline)
+    model_net_mean_return = float(execution_metrics.get("net_mean_return", math.nan))
+    baseline_net_mean_return = float(baseline_execution_metrics.get("net_mean_return", math.nan))
+    pnl_gate_pass = (
+        (not pnl_gate_enabled)
+        or (
+            math.isfinite(model_net_mean_return)
+            and math.isfinite(baseline_net_mean_return)
+            and (model_net_mean_return > baseline_net_mean_return)
+        )
+    )
+
+    max_drawdown_limit = float(settings.promotion_max_drawdown_limit)
+    model_max_drawdown = float(paper_trading.get("max_drawdown", math.nan))
+    baseline_max_drawdown = float(baseline_paper_trading.get("max_drawdown", math.nan))
+    drawdown_floor = max_drawdown_limit
+    if math.isfinite(baseline_max_drawdown):
+        drawdown_floor = max(drawdown_floor, baseline_max_drawdown)
+    drawdown_gate_pass = math.isfinite(model_max_drawdown) and (model_max_drawdown >= drawdown_floor)
+
     # Promotion gate is intentionally strict: edge over baseline + leakage safety + optional strict diagnostics.
     promotion_pass = (
         metrics["f1"] > baseline["f1"]
         and metrics["accuracy"] > baseline["accuracy"]
         and metrics["rmse"] < baseline["rmse"]
+        and pnl_gate_pass
+        and drawdown_gate_pass
         and leakage_pass
         and walk_forward_pass
         and (bool(martingale_diag["pass"]) if martingale_enforced else True)
@@ -1671,6 +2034,10 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         failed_reasons.append("classification_accuracy_not_above_baseline")
     if not (metrics["rmse"] < baseline["rmse"]):
         failed_reasons.append("regression_rmse_not_below_baseline")
+    if pnl_gate_enabled and not pnl_gate_pass:
+        failed_reasons.append("execution_net_mean_return_not_above_baseline")
+    if not drawdown_gate_pass:
+        failed_reasons.append("paper_trading_max_drawdown_below_limit")
     if not leakage_pass:
         failed_reasons.append("data_leakage_check_not_passed")
     if walk_forward_enforced and not walk_forward_pass:
@@ -1680,6 +2047,11 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
 
     calibration = _build_calibration_payload(split.y_test_cls, cls_prob)
     calibration["decision_threshold"] = float(cls_best.decision_threshold)
+    calibration["conformal_alpha"] = float(np.clip(float(settings.conformal_alpha), 0.01, 0.40))
+    calibration["conformal_q_abs_usd"] = float(conformal_q_abs_usd)
+    calibration["conformal_val_coverage"] = float(conformal_val_coverage)
+    if meta_result.enabled:
+        calibration["meta_decision_threshold"] = float(meta_result.threshold)
 
     symbol_dir = models_root / model_version / symbol
     artifact_paths = {
@@ -1688,6 +2060,7 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         "calibration": symbol_dir / f"calibration_{spec.label}.json",
         "metrics": symbol_dir / f"metrics_{spec.label}.json",
     }
+    meta_artifact_path = symbol_dir / f"meta_{spec.label}.joblib"
     regime_artifact_paths = {
         "classification": {
             name: symbol_dir / f"cls_{spec.label}_regime_{name}.joblib" for name in regime_cls_models
@@ -1711,6 +2084,7 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         "selected_models": {
             "classifier": cls_best.model_name,
             "regressor": reg_best.model_name,
+            "meta_labeler": ("logistic_regression_meta" if meta_result.enabled else "disabled"),
             "classifier_down_weight_boost": float(cls_best.class_down_weight_boost),
             "classifier_threshold_tuning": cls_best.threshold_tuning or {},
             "regression_target": reg_best.regression_target,
@@ -1742,10 +2116,28 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         "metric_confidence_intervals": metric_confidence_intervals,
         "data_leakage_checks": split.leakage_diagnostic,
         "execution_aware_metrics": execution_metrics,
+        "baseline_execution_aware_metrics": baseline_execution_metrics,
         "paper_trading_metrics": paper_trading,
+        "baseline_paper_trading_metrics": baseline_paper_trading,
         "walk_forward_gate": walk_forward_gate,
         "walk_forward_mode": walk_forward_mode,
         "walk_forward_enforced": walk_forward_enforced,
+        "meta_labeling": {
+            "enabled": bool(meta_result.enabled),
+            "reason": meta_result.reason,
+            "decision_threshold": float(meta_result.threshold),
+            "min_take_rate": float(meta_result.min_take_rate),
+            "val_take_rate": float(meta_result.val_take_rate),
+            "val_net_mean_return": float(meta_result.val_net_mean_return),
+            "val_max_drawdown": float(meta_result.val_max_drawdown),
+            "test_take_rate": float(np.mean(action_mask_test.astype(float))) if len(action_mask_test) else 0.0,
+        },
+        "conformal_interval": {
+            "alpha": float(np.clip(float(settings.conformal_alpha), 0.01, 0.40)),
+            "q_abs_usd": float(conformal_q_abs_usd),
+            "val_coverage": float(conformal_val_coverage),
+            "test_coverage": float(conformal_test_coverage),
+        },
         "top_features": {
             "classifier": _extract_top_feature_importance(cls_best.model, split.feature_columns),
             "regressor": _extract_top_feature_importance(reg_best.model, split.feature_columns),
@@ -1756,12 +2148,15 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
             "rules": {
                 "classification": ["f1 > baseline.f1", "accuracy > baseline.accuracy"],
                 "regression": ["rmse < baseline.rmse"],
+                "execution": ["net_mean_return > baseline.net_mean_return (optional strict gate)"],
+                "risk": ["max_drawdown >= max(PROMOTION_MAX_DRAWDOWN_LIMIT, baseline.max_drawdown)"],
                 "leakage": ["no train/val/test overlap with purge gap >= steps_ahead"],
                 "walk_forward": ["strict_pass_all_folds == true (strict mode only)"],
                 "stochastic": ["abs(residual_acf1) <= 0.10 (strict mode only)"],
             },
         },
         "artifact_paths": {key: str(path) for key, path in artifact_paths.items()},
+        "meta_artifact_path": str(meta_artifact_path) if meta_result.enabled else None,
         "regime_artifact_paths": {
             "classification": {key: str(path) for key, path in regime_artifact_paths["classification"].items()},
             "regression": {key: str(path) for key, path in regime_artifact_paths["regression"].items()},
@@ -1773,6 +2168,8 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         symbol_dir.mkdir(parents=True, exist_ok=True)
         dump(cls_best.model, artifact_paths["classification"])
         dump(reg_best.model, artifact_paths["regression"])
+        if meta_result.enabled and meta_result.model is not None:
+            dump(meta_result.model, meta_artifact_path)
         for name, model in regime_cls_models.items():
             dump(model, regime_artifact_paths["classification"][name])
         for name, model in regime_reg_models.items():

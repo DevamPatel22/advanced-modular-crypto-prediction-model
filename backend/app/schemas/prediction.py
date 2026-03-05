@@ -1,3 +1,5 @@
+"""Pydantic contracts for prediction request/response payloads."""
+
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -28,6 +30,9 @@ class PredictionResponse(BaseModel):
     predicted_close: float = Field(..., gt=0.0)
     predicted_low_usd: float = Field(..., gt=0.0, description="Projected lower bound close price for selected horizon (USD)")
     predicted_high_usd: float = Field(..., gt=0.0, description="Projected upper bound close price for selected horizon (USD)")
+    conformal_low_usd: float = Field(..., gt=0.0, description="Conformal lower bound for selected horizon close (USD)")
+    conformal_high_usd: float = Field(..., gt=0.0, description="Conformal upper bound for selected horizon close (USD)")
+    conformal_confidence: float = Field(..., ge=0.0, le=1.0, description="Approximate conformal coverage confidence")
     return_range_min_pct: float = Field(..., description="Expected lower bound return for selected horizon (%)")
     return_range_max_pct: float = Field(..., description="Expected upper bound return for selected horizon (%)")
     risk_score: float = Field(..., ge=0.0, le=100.0, description="Risk score on a 0-100 scale")

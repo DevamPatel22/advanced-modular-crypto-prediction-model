@@ -48,10 +48,16 @@ class Settings(BaseSettings):
     walk_forward_threshold_folds: int = 4
     walk_forward_gate_mode: str = "diagnostic"
     walk_forward_gate_folds: int = 4
+    meta_labeling_enabled: bool = True
+    meta_label_min_move_bps: float = 8.0
+    meta_label_min_take_rate: float = 0.05
+    conformal_alpha: float = 0.10
     execution_fee_bps: float = 4.0
     execution_slippage_bps: float = 3.0
     execution_max_turnover_per_step: float = 1.0
     paper_trade_initial_capital: float = 10000.0
+    promotion_require_pnl_above_baseline: bool = True
+    promotion_max_drawdown_limit: float = -0.45
     metric_ci_bootstrap_samples: int = 400
     metric_ci_level: float = 0.95
 

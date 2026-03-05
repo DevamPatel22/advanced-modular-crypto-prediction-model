@@ -179,6 +179,53 @@ def _price_bounds_from_return_range(current_price: float, min_pct: float, max_pc
     return (low, high) if low <= high else (high, low)
 
 
+def _meta_feature_frame_for_inference(
+    *,
+    features: pd.DataFrame,
+    prob_up: float,
+    decision_threshold: float,
+    predicted_close: float,
+    current_close: float,
+) -> pd.DataFrame:
+    """Internal helper to compute meta feature frame for inference."""
+    safe_current = max(float(current_close), 1e-12)
+    pred_return = (float(predicted_close) / safe_current) - 1.0
+
+    def _feature(name: str, default: float) -> float:
+        if name not in features.columns:
+            return float(default)
+        return float(features[name].iloc[0])
+
+    return pd.DataFrame(
+        [
+            {
+                "prob_up": float(prob_up),
+                "prob_edge": abs(float(prob_up) - float(decision_threshold)),
+                "pred_return": float(pred_return),
+                "abs_pred_return": abs(float(pred_return)),
+                "volatility_20": _feature("volatility_20", 0.0),
+                "markov_prob_down": _feature("markov_prob_down", 0.33),
+                "markov_prob_flat": _feature("markov_prob_flat", 0.34),
+                "markov_prob_up": _feature("markov_prob_up", 0.33),
+            }
+        ]
+    )
+
+
+def _conformal_bounds(predicted_close: float, calibration: dict[str, float | str], fallback_low: float, fallback_high: float) -> tuple[float, float, float]:
+    """Internal helper to compute conformal bounds."""
+    alpha = float(calibration.get("conformal_alpha", 0.10))
+    confidence = float(np.clip(1.0 - alpha, 0.0, 1.0))
+    q_abs = float(calibration.get("conformal_q_abs_usd", 0.0))
+    if q_abs > 0:
+        low = max(float(predicted_close) - q_abs, 1e-8)
+        high = max(float(predicted_close) + q_abs, 1e-8)
+        return (low, high, confidence) if low <= high else (high, low, confidence)
+    low = max(float(fallback_low), 1e-8)
+    high = max(float(fallback_high), 1e-8)
+    return ((low, high, confidence) if low <= high else (high, low, confidence))
+
+
 def _latest_features(symbol: str, spec: HorizonSpec, selected_features: list[str] | None = None) -> tuple[pd.DataFrame, float, str, int] | None:
     """Internal helper to compute latest features."""
     active_features = selected_features or feature_columns_for_horizon(spec.label)
@@ -272,6 +319,23 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
     direction = "up" if raw_prob_up >= decision_threshold else "down"
     confidence = round(_calibrate_confidence(raw_prob_up, calibration), 4)
     settings = get_settings()
+    meta_probability = None
+    meta_threshold = float(calibration.get("meta_decision_threshold", 0.5))
+    meta_artifact_path = metrics_meta.get("meta_artifact_path")
+    if isinstance(meta_artifact_path, str) and meta_artifact_path.strip():
+        meta_path = Path(meta_artifact_path)
+        if meta_path.exists():
+            meta_model = _load_cached_model(meta_path)
+            meta_frame = _meta_feature_frame_for_inference(
+                features=features,
+                prob_up=raw_prob_up,
+                decision_threshold=decision_threshold,
+                predicted_close=pred_close,
+                current_close=latest_close,
+            )
+            meta_probability = float(meta_model.predict_proba(meta_frame)[0][1])
+            if meta_probability < meta_threshold:
+                return None, "meta_label_rejected_signal"
     # Abstain if confidence is below runtime safety threshold.
     if settings.prediction_abstain_to_fallback and confidence < float(settings.prediction_confidence_min_for_model):
         return None, "model_confidence_below_threshold"
@@ -283,6 +347,12 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
         horizon_vol=horizon_vol,
     )
     low_usd, high_usd = _price_bounds_from_return_range(latest_close, range_min_pct, range_max_pct)
+    conformal_low_usd, conformal_high_usd, conformal_confidence = _conformal_bounds(
+        predicted_close=pred_close,
+        calibration=calibration,
+        fallback_low=low_usd,
+        fallback_high=high_usd,
+    )
 
     model_version = registry.get_active_model_version()
     debug = None
@@ -300,6 +370,10 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
             "volatility_source_granularity": vol_granularity,
             "horizon_volatility": f"{horizon_vol:.6f}",
             "model_confidence_threshold": f"{float(settings.prediction_confidence_min_for_model):.4f}",
+            "meta_probability": (f"{meta_probability:.6f}" if meta_probability is not None else "disabled"),
+            "meta_decision_threshold": f"{meta_threshold:.4f}",
+            "conformal_q_abs_usd": f"{float(calibration.get('conformal_q_abs_usd', 0.0)):.6f}",
+            "conformal_confidence": f"{conformal_confidence:.4f}",
             "artifact_metrics": str(artifact_paths["metrics"]),
         }
 
@@ -314,6 +388,9 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
             predicted_close=round(max(pred_close, 1e-8), 8),
             predicted_low_usd=round(low_usd, 8),
             predicted_high_usd=round(high_usd, 8),
+            conformal_low_usd=round(conformal_low_usd, 8),
+            conformal_high_usd=round(conformal_high_usd, 8),
+            conformal_confidence=round(conformal_confidence, 4),
             return_range_min_pct=range_min_pct,
             return_range_max_pct=range_max_pct,
             risk_score=risk_score,
@@ -349,6 +426,7 @@ def generate_prediction(payload: PredictionRequest) -> PredictionResponse:
         predicted_close = max(fallback_stub_close, 1e-8)
     current_price = reference_close if reference_close is not None else predicted_close
     low_usd, high_usd = _price_bounds_from_return_range(current_price, range_min_pct, range_max_pct)
+    conformal_low_usd, conformal_high_usd = low_usd, high_usd
 
     debug = None
     if payload.include_debug:
@@ -371,6 +449,9 @@ def generate_prediction(payload: PredictionRequest) -> PredictionResponse:
         predicted_close=round(predicted_close, 8),
         predicted_low_usd=round(low_usd, 8),
         predicted_high_usd=round(high_usd, 8),
+        conformal_low_usd=round(conformal_low_usd, 8),
+        conformal_high_usd=round(conformal_high_usd, 8),
+        conformal_confidence=0.5,
         return_range_min_pct=range_min_pct,
         return_range_max_pct=range_max_pct,
         risk_score=risk_score,

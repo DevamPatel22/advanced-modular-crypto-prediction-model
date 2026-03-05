@@ -139,6 +139,7 @@ Candidate models per symbol+horizon:
 - Classification: Logistic Regression (baseline) + Gradient Boosting
 - Classification ensemble: Logistic Regression, RandomForest, ExtraTrees, GradientBoosting, StackingClassifier
   plus validation-tuned probability blending of top classifier candidates for near-pass gate optimization.
+- Meta-labeling layer: a secondary classifier learns when to act (or abstain) on base signals using edge/probability/regime features.
 - Regression ensemble: RandomForest, GradientBoosting, HistGradientBoosting, ExtraTrees, StackingRegressor
   Regression target is modeled as `log_return` and transformed back to price with horizon-aware clipping to reduce extreme RMSE outliers.
   Training now also evaluates a residual target (`target_close - current_close`) and promotes it only when it gives a minimum relative RMSE improvement over log-return on validation.
@@ -157,6 +158,8 @@ Promotion gate (must pass all):
 - classification `f1 > baseline.f1`
 - classification `accuracy > baseline.accuracy`
 - regression `rmse < baseline.rmse`
+- execution `net_mean_return > baseline.net_mean_return` (when `PROMOTION_REQUIRE_PNL_ABOVE_BASELINE=true`)
+- risk `max_drawdown >= max(PROMOTION_MAX_DRAWDOWN_LIMIT, baseline.max_drawdown)`
 - martingale diagnostic `abs(residual_acf1) <= 0.10` when `MARTINGALE_GATE_MODE=strict`
 
 Training reports additionally include:
@@ -204,6 +207,8 @@ Any symbol+horizon without promoted artifacts automatically stays on fallback in
 Model inference also supports reliability abstention:
 if confidence is below `PREDICTION_CONFIDENCE_MIN_FOR_MODEL` and `PREDICTION_ABSTAIN_TO_FALLBACK=true`,
 the endpoint returns fallback output instead of low-edge model output.
+If meta-label artifacts are available, inference also abstains when meta edge probability is below its calibrated threshold.
+Prediction responses now include conformal USD intervals (`conformal_low_usd`, `conformal_high_usd`, `conformal_confidence`).
 Inference also uses calibrated per-horizon decision thresholds (not fixed 0.5) and optional regime-routed models when available.
 Inference also applies persisted `regression_blend_alpha` from metrics artifacts.
 
@@ -247,10 +252,16 @@ Reports:
   - `WALK_FORWARD_THRESHOLD_FOLDS=4`
   - `WALK_FORWARD_GATE_MODE=diagnostic|strict`
   - `WALK_FORWARD_GATE_FOLDS=4`
+  - `META_LABELING_ENABLED=true`
+  - `META_LABEL_MIN_MOVE_BPS=8.0`
+  - `META_LABEL_MIN_TAKE_RATE=0.05`
+  - `CONFORMAL_ALPHA=0.10`
   - `EXECUTION_FEE_BPS=4.0`
   - `EXECUTION_SLIPPAGE_BPS=3.0`
   - `EXECUTION_MAX_TURNOVER_PER_STEP=1.0`
   - `PAPER_TRADE_INITIAL_CAPITAL=10000`
+  - `PROMOTION_REQUIRE_PNL_ABOVE_BASELINE=true`
+  - `PROMOTION_MAX_DRAWDOWN_LIMIT=-0.45`
   - `METRIC_CI_BOOTSTRAP_SAMPLES=400`
   - `METRIC_CI_LEVEL=0.95`
 - Flow:
