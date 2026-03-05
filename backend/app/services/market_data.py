@@ -75,6 +75,87 @@ def init_market_data_db() -> None:
             ON candles(symbol, granularity, start_time DESC)
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS source_health_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_time TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                symbol TEXT NOT NULL,
+                granularity TEXT NOT NULL,
+                requested_limit INTEGER NOT NULL,
+                primary_status TEXT NOT NULL,
+                secondary_status TEXT NOT NULL,
+                selected_source TEXT NOT NULL,
+                primary_rows INTEGER NOT NULL,
+                secondary_rows INTEGER NOT NULL,
+                merged_rows INTEGER NOT NULL,
+                divergence REAL,
+                used_stale_cache INTEGER NOT NULL DEFAULT 0,
+                error_message TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_source_health_time
+            ON source_health_events(event_time DESC)
+            """
+        )
+        conn.commit()
+
+
+def _record_source_health_event(
+    *,
+    symbol: str,
+    granularity: str,
+    requested_limit: int,
+    primary_status: str,
+    secondary_status: str,
+    selected_source: str,
+    primary_rows: int,
+    secondary_rows: int,
+    merged_rows: int,
+    divergence: float | None,
+    used_stale_cache: bool,
+    error_message: str | None = None,
+) -> None:
+    event_time = datetime.now(tz=UTC).isoformat()
+    with _connect_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO source_health_events (
+                event_time,
+                symbol,
+                granularity,
+                requested_limit,
+                primary_status,
+                secondary_status,
+                selected_source,
+                primary_rows,
+                secondary_rows,
+                merged_rows,
+                divergence,
+                used_stale_cache,
+                error_message
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_time,
+                symbol,
+                granularity,
+                int(requested_limit),
+                primary_status,
+                secondary_status,
+                selected_source,
+                int(primary_rows),
+                int(secondary_rows),
+                int(merged_rows),
+                (float(divergence) if divergence is not None else None),
+                1 if used_stale_cache else 0,
+                error_message,
+            ),
+        )
         conn.commit()
 
 
@@ -146,7 +227,7 @@ async def _fetch_exchange_candles(symbol: str, granularity: str, limit: int) -> 
     end_cursor = int(datetime.now(tz=UTC).timestamp())
     remaining = max(limit, 1)
     collected: dict[int, CandlePoint] = {}
-    max_requests = 20
+    max_requests = 80
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         for _ in range(max_requests):
@@ -200,7 +281,7 @@ async def _fetch_binance_candles(symbol: str, granularity: str, limit: int) -> l
     end_cursor_ms = int(datetime.now(tz=UTC).timestamp() * 1000)
     remaining = max(limit, 1)
     collected: dict[int, CandlePoint] = {}
-    max_requests = 20
+    max_requests = 80
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         for _ in range(max_requests):
@@ -341,24 +422,37 @@ async def get_candles(symbol: str, granularity: str, limit: int, refresh: bool =
     secondary: list[CandlePoint] = []
     primary_ok = False
     secondary_ok = False
+    primary_status = "not_attempted"
+    secondary_status = "not_attempted"
     source = "coinbase_exchange"
+    divergence: float | None = None
 
     try:
         primary = await _fetch_exchange_candles(normalized_symbol, granularity, limit)
         primary_ok = True
+        primary_status = "fetched"
     except Exception:
         primary = []
+        primary_status = "fetch_failed"
 
     settings = get_settings()
     if settings.market_data_secondary_source_enabled:
         try:
             secondary = await _fetch_binance_candles(normalized_symbol, granularity, limit)
             secondary_ok = True
+            secondary_status = "fetched"
         except Exception:
             secondary = []
+            secondary_status = "fetch_failed"
+    else:
+        secondary_status = "disabled"
 
     primary_ok = primary_ok and _is_source_credible(primary, granularity)
     secondary_ok = secondary_ok and _is_source_credible(secondary, granularity)
+    if primary_status == "fetched":
+        primary_status = "credible" if primary_ok else "not_credible"
+    if secondary_status == "fetched":
+        secondary_status = "credible" if secondary_ok else "not_credible"
 
     if primary_ok and secondary_ok:
         divergence = _median_close_divergence(primary, secondary)
@@ -376,10 +470,51 @@ async def get_candles(symbol: str, granularity: str, limit: int, refresh: bool =
         source = "binance_spot"
     else:
         if cached:
+            _record_source_health_event(
+                symbol=normalized_symbol,
+                granularity=granularity,
+                requested_limit=limit,
+                primary_status=primary_status,
+                secondary_status=secondary_status,
+                selected_source="sqlite_cache_stale",
+                primary_rows=len(primary),
+                secondary_rows=len(secondary),
+                merged_rows=len(cached),
+                divergence=divergence,
+                used_stale_cache=True,
+                error_message="both_live_sources_unavailable_or_not_credible",
+            )
             return "sqlite_cache_stale", cached
+        _record_source_health_event(
+            symbol=normalized_symbol,
+            granularity=granularity,
+            requested_limit=limit,
+            primary_status=primary_status,
+            secondary_status=secondary_status,
+            selected_source="none",
+            primary_rows=len(primary),
+            secondary_rows=len(secondary),
+            merged_rows=0,
+            divergence=divergence,
+            used_stale_cache=False,
+            error_message="both_live_sources_unavailable_or_not_credible",
+        )
         raise RuntimeError(f"Unable to fetch candles from configured sources for {normalized_symbol}")
 
     _save_candles(normalized_symbol, granularity, merged, source=source)
+    _record_source_health_event(
+        symbol=normalized_symbol,
+        granularity=granularity,
+        requested_limit=limit,
+        primary_status=primary_status,
+        secondary_status=secondary_status,
+        selected_source=source,
+        primary_rows=len(primary),
+        secondary_rows=len(secondary),
+        merged_rows=len(merged),
+        divergence=divergence,
+        used_stale_cache=False,
+    )
     return source, merged
 
 

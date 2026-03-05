@@ -12,6 +12,7 @@ from app.api.health import router as health_router
 from app.api.market_data import router as market_data_router
 from app.api.markets import router as markets_router
 from app.api.predictions import router as predictions_router
+from app.api.risk import router as risk_router
 from app.config import get_settings
 from app.services.ingestion import run_ingestion_loop
 from app.services.market_data import init_market_data_db
@@ -58,6 +59,7 @@ app.include_router(health_router, prefix=settings.api_prefix)
 app.include_router(market_data_router, prefix=settings.api_prefix)
 app.include_router(markets_router, prefix=settings.api_prefix)
 app.include_router(predictions_router, prefix=settings.api_prefix)
+app.include_router(risk_router, prefix=settings.api_prefix)
 
 
 @app.get("/")

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-FEATURE_VERSION = "v2"
+FEATURE_VERSION = "v3"
 
 FEATURE_COLUMNS = [
     "ret_1",
@@ -37,6 +37,14 @@ FEATURE_COLUMNS = [
     "gbm_expected_ret_1",
     "gbm_var_1",
     "shock_z_20",
+    "vol_of_vol_20",
+    "liquidity_pressure_5",
+    "orderflow_imbalance_proxy_10",
+    "range_expansion_10",
+    "funding_rate_proxy_8h",
+    "open_interest_proxy_20",
+    "basis_proxy_30",
+    "onchain_activity_proxy_20",
     "markov_prob_down",
     "markov_prob_flat",
     "markov_prob_up",
@@ -64,6 +72,12 @@ SHORT_FEATURE_COLUMNS = [
     "body_ratio",
     "close_position",
     "shock_z_20",
+    "vol_of_vol_20",
+    "liquidity_pressure_5",
+    "orderflow_imbalance_proxy_10",
+    "range_expansion_10",
+    "funding_rate_proxy_8h",
+    "open_interest_proxy_20",
     "markov_prob_down",
     "markov_prob_flat",
     "markov_prob_up",
@@ -90,6 +104,11 @@ LONG_FEATURE_COLUMNS = [
     "gbm_expected_ret_1",
     "gbm_var_1",
     "shock_z_20",
+    "vol_of_vol_20",
+    "funding_rate_proxy_8h",
+    "open_interest_proxy_20",
+    "basis_proxy_30",
+    "onchain_activity_proxy_20",
     "markov_prob_down",
     "markov_prob_flat",
     "markov_prob_up",
@@ -202,6 +221,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
         2 * frame["mu_20"] + np.square(frame["sigma_20"])
     )
     frame["shock_z_20"] = (frame["log_ret_1"] - frame["mu_20"]) / (frame["sigma_20"] + 1e-12)
+    frame["vol_of_vol_20"] = frame["volatility_5"].rolling(20).std()
 
     rolling_volume_mean = frame["volume"].rolling(20).mean()
     rolling_volume_std = frame["volume"].rolling(20).std()
@@ -215,6 +235,18 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     frame["body_ratio"] = (frame["close"] - frame["open"]) / (frame["open"] + 1e-12)
     frame["close_position"] = (frame["close"] - frame["low"]) / ((frame["high"] - frame["low"]) + 1e-12)
     frame["trend_slope_30"] = frame["close"].diff(30) / (frame["close"].shift(30) + 1e-12)
+    signed_volume = np.sign(frame["close"] - frame["open"]) * frame["volume"]
+    frame["liquidity_pressure_5"] = signed_volume.rolling(5).sum() / (frame["volume"].rolling(5).sum() + 1e-12)
+    frame["orderflow_imbalance_proxy_10"] = signed_volume.rolling(10).mean() / (np.abs(signed_volume).rolling(10).mean() + 1e-12)
+    frame["range_expansion_10"] = frame["hl_spread"] / (frame["hl_spread"].rolling(10).mean() + 1e-12) - 1.0
+    # Free proxy for derivatives carry/funding pressure using fast-vs-slow trend spread.
+    frame["funding_rate_proxy_8h"] = frame["ema_8_ratio"] - frame["ema_21_ratio"]
+    # Free proxy for open-interest expansion combining activity and directional persistence.
+    frame["open_interest_proxy_20"] = np.log1p(frame["volume"].rolling(20).mean()) * np.abs(frame["ret_1"].rolling(20).mean())
+    # Free basis proxy (spot-vs-fair trend spread approximation).
+    frame["basis_proxy_30"] = frame["ma_30_ratio"] - frame["ema_26_ratio"]
+    # Free on-chain activity proxy from synchronized flow + volatility shock.
+    frame["onchain_activity_proxy_20"] = frame["volume_z_20"] * (1.0 + np.abs(frame["shock_z_20"]))
     states = _encode_state(frame["ret_1"])
     frame = frame.join(_markov_transition_features(states))
 

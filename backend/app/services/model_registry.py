@@ -18,8 +18,19 @@ class ModelRegistry:
         return {
             "active_model_version": settings.default_model_version,
             "promoted": {},
+            "history": [],
             "updated_at": datetime.now(tz=UTC).isoformat(),
         }
+
+    def _history(self, payload: dict[str, object]) -> list[dict[str, object]]:
+        history = payload.get("history", [])
+        if not isinstance(history, list):
+            return []
+        normalized: list[dict[str, object]] = []
+        for item in history:
+            if isinstance(item, dict):
+                normalized.append(item)
+        return normalized
 
     def read(self) -> dict[str, object]:
         if not self.registry_path.exists():
@@ -70,7 +81,48 @@ class ModelRegistry:
 
     def promote_candidate(self, candidate_version: str, promoted: dict[str, dict[str, bool]]) -> dict[str, object]:
         payload = self.read()
+        previous_active = str(payload.get("active_model_version") or "")
+        previous_promoted = payload.get("promoted", {})
+        history = self._history(payload)
+        history.append(
+            {
+                "action": "promote",
+                "at": datetime.now(tz=UTC).isoformat(),
+                "from_active": previous_active,
+                "to_active": candidate_version,
+                "from_promoted": previous_promoted,
+                "to_promoted": promoted,
+            }
+        )
+        payload["history"] = history[-40:]
         payload["active_model_version"] = candidate_version
+        payload["promoted"] = promoted
+        self.write(payload)
+        return payload
+
+    def rollback_to(
+        self,
+        target_version: str,
+        promoted: dict[str, dict[str, bool]],
+        reason: str,
+    ) -> dict[str, object]:
+        payload = self.read()
+        previous_active = str(payload.get("active_model_version") or "")
+        previous_promoted = payload.get("promoted", {})
+        history = self._history(payload)
+        history.append(
+            {
+                "action": "rollback",
+                "at": datetime.now(tz=UTC).isoformat(),
+                "reason": reason,
+                "from_active": previous_active,
+                "to_active": target_version,
+                "from_promoted": previous_promoted,
+                "to_promoted": promoted,
+            }
+        )
+        payload["history"] = history[-60:]
+        payload["active_model_version"] = target_version
         payload["promoted"] = promoted
         self.write(payload)
         return payload

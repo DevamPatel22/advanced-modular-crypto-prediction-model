@@ -12,6 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.services.model_registry import ModelRegistry
+from app.services.experiment_tracker import log_experiment_event
 from app.config import get_settings
 
 
@@ -155,6 +156,21 @@ def main() -> None:
 
     output_path = PROJECT_ROOT / args.output
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    events_path = log_experiment_event(
+        "promotion",
+        {
+            "candidate": args.candidate,
+            "phase": args.phase,
+            "promoted_symbols": promoted_symbols,
+            "promoted_pairs": promoted_pairs,
+            "kept_previous_active": kept_previous_active,
+            "previous_active": current_active,
+            "new_active": report["new_active"],
+            "output_report": str(output_path),
+        },
+    )
+    report["experiment_events_path"] = str(events_path)
     output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report, indent=2))
 

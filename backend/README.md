@@ -35,11 +35,15 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 - `GET /` root service metadata
 - `GET /api/v1/health` service health status
+- `GET /api/v1/health/data-readiness` latest data-quality snapshot for training gate readiness
+- `GET /api/v1/health/source-health?hours=24` source reliability telemetry summary
 - `GET /api/v1/markets/symbols?quote=USD` tradable symbols catalog
 - `GET /api/v1/market-data/candles?symbol=BTC-USD&granularity=1h&limit=200` OHLCV candles
 - `GET /api/v1/market-data/ticker?symbol=BTC-USD` latest ticker
 - `WS /api/v1/market-data/ws/ticker?symbol=BTC-USD` streaming ticker updates
 - `POST /api/v1/predictions` prediction output with risk-aware return range
+- `POST /api/v1/risk/portfolio-snapshot` portfolio-level VaR/CVaR/drawdown snapshot
+- `POST /api/v1/risk/limit-check` exposure/turnover risk-limit enforcement
 
 All prediction and market-data endpoints validate symbols against the US-tradable USD pair universe.
 Symbols outside that universe return `400`.
@@ -53,6 +57,50 @@ Background ingestion loop:
   `MARKET_DATA_SOURCE_BASE_URL` (primary, Coinbase),
   `MARKET_DATA_SECONDARY_SOURCE_ENABLED`,
   `MARKET_DATA_SECONDARY_SOURCE_BASE_URL` (secondary, Binance).
+
+Source telemetry:
+
+- every market-data fetch writes a `source_health_events` record in SQLite
+- includes source credibility outcome, selected source, divergence, and stale-cache fallback usage
+- powers `/api/v1/health/source-health` for ops visibility
+
+## Data Foundation Workflow (Before Retraining)
+
+Deep backfill priority symbols to target history depth:
+
+```bash
+python scripts/backfill_market_data.py \
+  --symbols BTC-USD,ETH-USD,SOL-USD \
+  --granularities 1m,5m,15m,1h,6h,1d \
+  --target-rows-map 1m:30000,5m:18000,15m:12000,1h:6000,6h:2500,1d:1500 \
+  --max-passes 3 \
+  --output reports/backfill_market_data.json
+```
+
+Generate data quality report:
+
+```bash
+python scripts/data_quality_report.py \
+  --symbols BTC-USD,ETH-USD,SOL-USD \
+  --granularities 1m,5m,15m,1h,6h,1d \
+  --output reports/data_quality_report.json
+```
+
+Key gates checked per symbol/granularity:
+
+- minimum row depth
+- freshness (staleness steps)
+- timestamp interval consistency
+- gap ratio threshold
+
+Use retrain quality gate to block training when data is weak:
+
+```bash
+python scripts/daily_retrain.py \
+  --phase phase3 \
+  --enforce-data-quality \
+  --symbols BTC-USD,ETH-USD,SOL-USD
+```
 
 ## Baseline Accuracy Evaluation
 
@@ -87,8 +135,10 @@ Candidate models per symbol+horizon:
 
 - Classification: Logistic Regression (baseline) + Gradient Boosting
 - Classification ensemble: Logistic Regression, RandomForest, ExtraTrees, GradientBoosting, StackingClassifier
+  plus validation-tuned probability blending of top classifier candidates for near-pass gate optimization.
 - Regression ensemble: RandomForest, GradientBoosting, HistGradientBoosting, ExtraTrees, StackingRegressor
   Regression target is modeled as `log_return` and transformed back to price with horizon-aware clipping to reduce extreme RMSE outliers.
+  Training now also evaluates a residual target (`target_close - current_close`) and promotes it only when it gives a minimum relative RMSE improvement over log-return on validation.
   Final regression output uses a validation-optimized blend with persistence (`regression_blend_alpha`) to reduce RMSE drift.
   Per-horizon feature subsets are used (short-horizon microstructure/volatility burst vs long-horizon trend/regime persistence).
 
@@ -110,6 +160,9 @@ Training reports additionally include:
 
 - high-confidence slice quality at `HIGH_CONFIDENCE_THRESHOLD`
 - regime breakdown metrics (`down/flat/up`) on the test window
+- bootstrap confidence intervals for `accuracy`, `f1`, and `rmse`
+- purged split leakage diagnostics (must pass to qualify)
+- paper-trading metrics (`equity`, `drawdown`, `VaR/CVaR`, `turnover`) with configured fees/slippage
 - near-pass deltas vs baseline and top feature importance lists for targeted retraining
 
 Horizon data readiness uses adaptive minimum sample targets (short horizons require more history than long horizons) so early-stage training can activate qualified pairs sooner while still keeping gate checks strict.
@@ -158,6 +211,7 @@ backend/data/models/
   registry.json
   <model_version>/
     manifest.json
+    artifact_manifest.json
     <symbol>/
       cls_<horizon>.joblib
       reg_<horizon>.joblib
@@ -174,7 +228,6 @@ Reports:
 ## Retraining Cadence
 
 - Target schedule: daily (`RETRAIN_SCHEDULE_CRON`, default `0 2 * * *`)
-- Recommended ingestion depth for training readiness: `INGESTION_LIMIT_PER_SYMBOL=1500`
 - Recommended ingestion depth for training readiness: `INGESTION_LIMIT_PER_SYMBOL=5000`
 - Staged stochastic gate control: `MARTINGALE_GATE_MODE=bootstrap|strict` (default: `bootstrap`)
 - Bootstrap short-horizon promotion set: `BOOTSTRAP_PHASE1_HORIZONS=5m,1h,3h,6h,12h`
@@ -182,9 +235,21 @@ Reports:
   - `CLASSIFICATION_LABEL_MODE=triple_barrier|terminal_direction`
   - `TRIPLE_BARRIER_SIGMA_MULT=1.0`
   - `REGIME_MODELS_ENABLED=true|false`
+  - classification threshold search uses an expanded grid + probability quantiles and optimizes gate-oriented margins
+  - classifier training uses dynamic down-class sample-weight boost candidates on imbalanced windows
   - `HIGH_CONFIDENCE_THRESHOLD=0.62`
   - `PREDICTION_CONFIDENCE_MIN_FOR_MODEL=0.56`
   - `PREDICTION_ABSTAIN_TO_FALLBACK=true`
+  - `WALK_FORWARD_THRESHOLD_ENABLED=true`
+  - `WALK_FORWARD_THRESHOLD_FOLDS=4`
+  - `WALK_FORWARD_GATE_MODE=diagnostic|strict`
+  - `WALK_FORWARD_GATE_FOLDS=4`
+  - `EXECUTION_FEE_BPS=4.0`
+  - `EXECUTION_SLIPPAGE_BPS=3.0`
+  - `EXECUTION_MAX_TURNOVER_PER_STEP=1.0`
+  - `PAPER_TRADE_INITIAL_CAPITAL=10000`
+  - `METRIC_CI_BOOTSTRAP_SAMPLES=400`
+  - `METRIC_CI_LEVEL=0.95`
 - Flow:
   1. ingest latest candles
   2. train candidate version
@@ -208,6 +273,90 @@ Outputs:
 - `backend/reports/daily_retrain_<model_version>.json`
 - `backend/reports/summary_report_<model_version>.json`
 - `backend/reports/promotion_report_<model_version>.json`
+
+### One-command reproducibility bundle
+
+```bash
+python scripts/repro_pipeline.py --phase phase3 --model-version repro-$(date +%Y%m%d-%H%M%S)
+```
+
+Bundle output includes command traces, settings snapshot, report checksums, and git commit linkage.
+
+### Continuous Near-Promotion Loop (hourly-friendly)
+
+```bash
+python scripts/near_promotion_retrain.py --phase phase3 --skip-ingest --symbols BTC-USD,ETH-USD,SOL-USD --max-pairs 6
+```
+
+Single-pair sequential run:
+
+```bash
+python scripts/near_promotion_retrain.py --phase phase3 --skip-ingest --target-pairs BTC-USD:1h
+```
+
+Optional near-pass soft-promotion controls (pair-by-pair operations):
+
+```bash
+python scripts/near_promotion_retrain.py \
+  --phase phase3 \
+  --skip-ingest \
+  --target-pairs ETH-USD:6h \
+  --soft-promote-f1-delta-min -0.015 \
+  --soft-promote-accuracy-delta-min -0.01 \
+  --soft-promote-rmse-delta-min -0.1
+```
+
+Behavior:
+
+- selects near-pass candidates from the broadest available `summary_report_*.json` (coverage-aware selection)
+- retrains only selected near-promotion symbol+horizon pairs
+- carries forward previously promoted symbol+horizon artifacts into the candidate version (copy/retrain) so active promoted pairs never lose artifact availability
+- runs `promote_model.py --merge-existing` so previously promoted pairs remain active
+- writes:
+  - `backend/reports/summary_report_<model_version>.json`
+  - `backend/reports/promotion_report_<model_version>.json`
+  - `backend/reports/near_promotion_<model_version>.json`
+
+## Institutional Evaluation Additions
+
+Per symbol/horizon metrics artifacts now include:
+
+- walk-forward threshold tuning diagnostics (nested threshold selection on time-ordered folds)
+- walk-forward strict-gate diagnostics (`strict_pass_all_folds`)
+- purged split leakage diagnostics (`required_gap_rows >= steps_ahead`)
+- bootstrap confidence intervals for key gate metrics
+- execution-aware metrics (fee/slippage/turnover-adjusted return and risk metrics)
+- paper-trading metrics (cost-adjusted PnL and tail risk)
+- portfolio risk metrics (`VaR`, `CVaR`, `max_drawdown`) from execution-aware return stream
+
+`WALK_FORWARD_GATE_MODE=strict` enforces walk-forward strict pass as part of promotion gate.
+
+## Experiment Tracking and Rollback Guard
+
+Experiment lineage:
+
+- event log file: `backend/reports/experiment_events.jsonl`
+- events are recorded for training, promotion, daily retrain, and rollback guard checks
+
+Registry lineage:
+
+- `backend/data/models/registry.json` now stores promotion/rollback history entries
+
+Safe rollback guard (dry-run by default):
+
+```bash
+python scripts/auto_rollback_guard.py --hours 24 --max-stale-cache-ratio 0.35
+```
+
+Apply rollback (only if target exists in registry history):
+
+```bash
+python scripts/auto_rollback_guard.py --hours 24 --max-stale-cache-ratio 0.35 --apply
+```
+
+Automation helper:
+
+- `backend/scripts/run_daily_retrain.sh` runs the near-promotion loop with thread caps and `--skip-ingest` for stable hourly operation on local machines.
 
 ### macOS cron example (daily 2:00 AM local time)
 

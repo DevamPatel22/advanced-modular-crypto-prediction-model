@@ -15,6 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.config import get_settings
 from app.services.ingestion import run_ingestion_cycle
+from app.services.experiment_tracker import log_experiment_event
 from app.services.model_registry import ModelRegistry
 
 
@@ -40,6 +41,27 @@ def main() -> None:
     )
     parser.add_argument("--skip-ingest", action="store_true", help="Skip pre-training ingestion cycle")
     parser.add_argument("--output-prefix", default="reports", help="Output folder for reports")
+    parser.add_argument(
+        "--enforce-data-quality",
+        action="store_true",
+        help="Run data quality preflight and abort retrain when gate fails",
+    )
+    parser.add_argument(
+        "--quality-granularities",
+        default="1m,5m,15m,1h,6h,1d",
+        help="Granularities for data quality check",
+    )
+    parser.add_argument(
+        "--quality-max-gap-ratio",
+        type=float,
+        default=0.10,
+        help="Maximum gap ratio allowed in quality preflight",
+    )
+    parser.add_argument(
+        "--quality-min-rows-map",
+        default="",
+        help="Optional per-granularity row floors for quality preflight, format 1m:20000,1h:4000",
+    )
     args = parser.parse_args()
 
     settings = get_settings()
@@ -52,6 +74,7 @@ def main() -> None:
         "phase": args.phase,
         "steps": [],
     }
+    quality_report_path = f"{args.output_prefix}/data_quality_{args.model_version}.json"
 
     if not args.skip_ingest:
         try:
@@ -59,6 +82,63 @@ def main() -> None:
             run_report["steps"].append({"step": "ingestion", "status": "ok"})
         except Exception as exc:
             run_report["steps"].append({"step": "ingestion", "status": "failed", "error": str(exc)})
+
+    if args.enforce_data_quality:
+        quality_cmd = [
+            sys.executable,
+            "scripts/data_quality_report.py",
+            "--granularities",
+            args.quality_granularities,
+            "--max-gap-ratio",
+            str(args.quality_max_gap_ratio),
+            "--output",
+            quality_report_path,
+        ]
+        symbols_for_quality = args.symbols.strip() if args.symbols.strip() else settings.supported_symbols
+        quality_cmd.extend(["--symbols", symbols_for_quality])
+        if args.quality_min_rows_map.strip():
+            quality_cmd.extend(["--min-rows-map", args.quality_min_rows_map.strip()])
+
+        quality_proc = _run_command(quality_cmd)
+        quality_gate_passed = False
+        quality_payload: dict[str, object] = {}
+        if quality_proc.returncode == 0:
+            quality_file = PROJECT_ROOT / quality_report_path
+            if quality_file.exists():
+                try:
+                    quality_payload = json.loads(quality_file.read_text(encoding="utf-8"))
+                except Exception:
+                    quality_payload = {}
+            quality_gate_passed = bool(quality_payload.get("gate_passed"))
+
+        run_report["steps"].append(
+            {
+                "step": "data_quality_preflight",
+                "status": "ok" if (quality_proc.returncode == 0 and quality_gate_passed) else "failed",
+                "returncode": quality_proc.returncode,
+                "gate_passed": quality_gate_passed,
+                "failing_pair_count": quality_payload.get("failing_pair_count"),
+                "stdout_tail": quality_proc.stdout[-4000:],
+                "stderr_tail": quality_proc.stderr[-4000:],
+                "quality_report": str(PROJECT_ROOT / quality_report_path),
+            }
+        )
+
+        if quality_proc.returncode != 0 or not quality_gate_passed:
+            output_file = output_root / f"daily_retrain_{args.model_version}.json"
+            output_file.write_text(json.dumps(run_report, indent=2), encoding="utf-8")
+            print(
+                json.dumps(
+                    {
+                        "status": "failed",
+                        "reason": "data_quality_gate_failed",
+                        "report": str(output_file),
+                        "quality_report": str(PROJECT_ROOT / quality_report_path),
+                    },
+                    indent=2,
+                )
+            )
+            raise SystemExit(1)
 
     train_output = f"{args.output_prefix}/summary_report_{args.model_version}.json"
     train_cmd = [
@@ -125,6 +205,17 @@ def main() -> None:
 
     output_file = output_root / f"daily_retrain_{args.model_version}.json"
     output_file.write_text(json.dumps(run_report, indent=2), encoding="utf-8")
+    event_path = log_experiment_event(
+        "daily_retrain",
+        {
+            "model_version": args.model_version,
+            "phase": args.phase,
+            "status": "ok" if promote_proc.returncode == 0 else "failed",
+            "report": str(output_file),
+            "summary_report": str(PROJECT_ROOT / train_output),
+            "promotion_report": str(PROJECT_ROOT / promote_output),
+        },
+    )
 
     print(
         json.dumps(
@@ -136,6 +227,8 @@ def main() -> None:
                 "run_report": str(output_file),
                 "summary_report": str(PROJECT_ROOT / train_output),
                 "promotion_report": str(PROJECT_ROOT / promote_output),
+                "quality_report": str(PROJECT_ROOT / quality_report_path) if args.enforce_data_quality else None,
+                "experiment_events_path": str(event_path),
                 "ingestion_enabled": settings.ingestion_enabled,
             },
             indent=2,

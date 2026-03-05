@@ -16,7 +16,7 @@ from joblib import load
 
 from app.config import get_settings
 from app.ml.features import FEATURE_COLUMNS, HORIZON_SPECS, HorizonSpec, build_features, feature_columns_for_horizon
-from app.ml.training import clip_log_return_predictions, load_candles
+from app.ml.training import apply_directional_tilt_to_close, load_candles, regression_output_to_close
 from app.schemas.prediction import PredictionRequest, PredictionResponse
 from app.services.model_registry import ModelRegistry
 
@@ -228,14 +228,29 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
                 regime_reg_model = _load_cached_model(Path(reg_regime_path))
                 reg_raw = float(regime_reg_model.predict(features)[0])
     regression_target = str(metrics_meta.get("regression_target", "price_close"))
-    if regression_target == "log_return":
-        clipped = clip_log_return_predictions(np.array([reg_raw], dtype=float), payload.horizon)
-        model_pred_close = float(latest_close * math.exp(float(clipped[0])))
-    else:
-        model_pred_close = reg_raw
+    model_pred_close = float(
+        regression_output_to_close(
+            raw_prediction=np.array([reg_raw], dtype=float),
+            current_close=np.array([latest_close], dtype=float),
+            horizon=payload.horizon,
+            regression_target=regression_target,
+        )[0]
+    )
     regression_blend_alpha = float(metrics_meta.get("regression_blend_alpha", 1.0))
     regression_blend_alpha = float(min(1.0, max(0.0, regression_blend_alpha)))
     pred_close = (regression_blend_alpha * model_pred_close) + ((1.0 - regression_blend_alpha) * latest_close)
+    directional_tilt_gamma = float(metrics_meta.get("directional_tilt_gamma", 0.0))
+    feature_volatility_20 = float(features["volatility_20"].iloc[0]) if "volatility_20" in features.columns else 0.0
+    pred_close = float(
+        apply_directional_tilt_to_close(
+            predicted_close=np.array([pred_close], dtype=float),
+            current_close=np.array([latest_close], dtype=float),
+            probability_up=np.array([raw_prob_up], dtype=float),
+            volatility_feature=np.array([feature_volatility_20], dtype=float),
+            horizon=payload.horizon,
+            gamma=directional_tilt_gamma,
+        )[0]
+    )
     direction = "up" if raw_prob_up >= decision_threshold else "down"
     confidence = round(_calibrate_confidence(raw_prob_up, calibration), 4)
     settings = get_settings()
@@ -262,6 +277,7 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
             "decision_threshold": f"{decision_threshold:.4f}",
             "regression_target": regression_target,
             "regression_blend_alpha": f"{regression_blend_alpha:.4f}",
+            "directional_tilt_gamma": f"{directional_tilt_gamma:.4f}",
             "volatility_source_granularity": vol_granularity,
             "horizon_volatility": f"{horizon_vol:.6f}",
             "model_confidence_threshold": f"{float(settings.prediction_confidence_min_for_model):.4f}",

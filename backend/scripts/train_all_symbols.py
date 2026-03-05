@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,6 +20,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.ml.features import FEATURE_VERSION
 from app.ml.training import all_horizon_specs, evaluate_symbol_horizon, list_symbols_with_any_candles
 from app.services.markets import fetch_symbols_by_quote
+from app.services.experiment_tracker import log_experiment_event
 from app.config import get_settings
 
 
@@ -37,6 +39,17 @@ def _parse_symbols(raw: str) -> list[str]:
     return sorted(set(symbols))
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train candidate models for all US-tradable USD crypto symbols")
     parser.add_argument("--model-version", default=_default_model_version(), help="Model version folder name")
@@ -51,6 +64,11 @@ def main() -> None:
         "--symbols",
         default="",
         help="Optional comma-separated explicit symbol set (example: BTC-USD,ETH-USD,SOL-USD)",
+    )
+    parser.add_argument(
+        "--allow-existing-version",
+        action="store_true",
+        help="Allow training into an existing model version folder (disabled by default for immutability)",
     )
     args = parser.parse_args()
     settings = get_settings()
@@ -67,6 +85,12 @@ def main() -> None:
     reports_root = PROJECT_ROOT / "reports"
     symbols_report_root = reports_root / "symbols"
     symbols_report_root.mkdir(parents=True, exist_ok=True)
+    version_root = models_root / args.model_version
+    if version_root.exists() and any(version_root.iterdir()) and not args.allow_existing_version:
+        raise SystemExit(
+            f"Model version '{args.model_version}' already exists and is non-empty. "
+            "Choose a new version or pass --allow-existing-version."
+        )
 
     horizon_specs = all_horizon_specs()
 
@@ -155,9 +179,31 @@ def main() -> None:
         "universe_count": len(universe),
         "symbols": universe,
     }
-    version_manifest_path = models_root / args.model_version / "manifest.json"
+    version_manifest_path = version_root / "manifest.json"
     version_manifest_path.parent.mkdir(parents=True, exist_ok=True)
     version_manifest_path.write_text(json.dumps(version_manifest, indent=2), encoding="utf-8")
+
+    artifact_rows: list[dict[str, object]] = []
+    for artifact in sorted(version_root.rglob("*")):
+        if not artifact.is_file():
+            continue
+        rel = artifact.relative_to(version_root)
+        artifact_rows.append(
+            {
+                "path": str(rel),
+                "size_bytes": int(artifact.stat().st_size),
+                "sha256": _sha256_file(artifact),
+            }
+        )
+    artifact_manifest_path = version_root / "artifact_manifest.json"
+    artifact_manifest = {
+        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "model_version": args.model_version,
+        "artifact_count": len(artifact_rows),
+        "artifacts": artifact_rows,
+    }
+    artifact_manifest_path.write_text(json.dumps(artifact_manifest, indent=2), encoding="utf-8")
+    aggregate["artifact_manifest"] = str(artifact_manifest_path)
 
     output_path = PROJECT_ROOT / args.output
     if isinstance(aggregate.get("near_pass_candidates"), list):
@@ -170,7 +216,28 @@ def main() -> None:
         )[:50]
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(aggregate, indent=2), encoding="utf-8")
-    print(json.dumps({"summary_report": str(output_path), "manifest": str(version_manifest_path)}, indent=2))
+    event_path = log_experiment_event(
+        "train_all_symbols",
+        {
+            "model_version": args.model_version,
+            "universe_size": len(universe),
+            "summary_report": str(output_path),
+            "manifest": str(version_manifest_path),
+            "artifact_manifest": str(artifact_manifest_path),
+            "near_pass_candidates": len(aggregate.get("near_pass_candidates", [])) if isinstance(aggregate.get("near_pass_candidates"), list) else None,
+        },
+    )
+    print(
+        json.dumps(
+            {
+                "summary_report": str(output_path),
+                "manifest": str(version_manifest_path),
+                "artifact_manifest": str(artifact_manifest_path),
+            },
+            indent=2,
+        )
+    )
+    print(json.dumps({"experiment_events_path": str(event_path)}, indent=2))
 
 
 if __name__ == "__main__":

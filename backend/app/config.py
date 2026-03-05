@@ -39,6 +39,16 @@ class Settings(BaseSettings):
     high_confidence_threshold: float = 0.62
     prediction_confidence_min_for_model: float = 0.56
     prediction_abstain_to_fallback: bool = True
+    walk_forward_threshold_enabled: bool = True
+    walk_forward_threshold_folds: int = 4
+    walk_forward_gate_mode: str = "diagnostic"
+    walk_forward_gate_folds: int = 4
+    execution_fee_bps: float = 4.0
+    execution_slippage_bps: float = 3.0
+    execution_max_turnover_per_step: float = 1.0
+    paper_trade_initial_capital: float = 10000.0
+    metric_ci_bootstrap_samples: int = 400
+    metric_ci_level: float = 0.95
 
     model_config = SettingsConfigDict(
         env_file=".env",

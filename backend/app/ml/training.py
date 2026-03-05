@@ -14,19 +14,21 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from joblib import dump
+from sklearn.base import clone
 from sklearn.ensemble import (
     ExtraTreesRegressor,
     RandomForestClassifier,
     ExtraTreesClassifier,
     GradientBoostingClassifier,
     GradientBoostingRegressor,
+    HistGradientBoostingClassifier,
     HistGradientBoostingRegressor,
     RandomForestRegressor,
     StackingClassifier,
     StackingRegressor,
 )
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import ElasticNet, HuberRegressor, LogisticRegression, Ridge
 from sklearn.metrics import (
     accuracy_score,
     f1_score,
@@ -40,6 +42,13 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from app.config import get_settings
+from app.ml.evaluation import (
+    bootstrap_metric_confidence_intervals,
+    choose_threshold_walk_forward,
+    execution_aware_metrics,
+    paper_trading_metrics,
+    strict_gate_walk_forward_diagnostic,
+)
 from app.ml.features import FEATURE_COLUMNS, FEATURE_VERSION, HORIZON_SPECS, HorizonSpec, build_features, feature_columns_for_horizon
 
 try:  # Optional free libraries if installed in runtime.
@@ -84,6 +93,18 @@ HORIZON_LOG_RETURN_CLIP: dict[str, float] = {
     "1mo": 1.75,
     "3mo": 2.50,
 }
+RESIDUAL_TARGET_MIN_REL_IMPROVEMENT = 0.0025
+HORIZON_DIRECTIONAL_TILT_MAX_LOG_SHIFT: dict[str, float] = {
+    "5m": 0.035,
+    "1h": 0.06,
+    "3h": 0.08,
+    "6h": 0.10,
+    "12h": 0.12,
+    "1d": 0.16,
+    "1w": 0.24,
+    "1mo": 0.32,
+    "3mo": 0.45,
+}
 
 
 @dataclass(frozen=True)
@@ -98,22 +119,62 @@ class SplitData:
     y_train_reg: pd.Series
     y_val_reg: pd.Series
     y_test_reg: np.ndarray
+    current_close_train: np.ndarray
     current_close_val: np.ndarray
     current_close_test: np.ndarray
+    target_close_train: np.ndarray
     target_close_val: np.ndarray
     target_close_test: np.ndarray
     regime_train: np.ndarray
     regime_val: np.ndarray
     regime_test: np.ndarray
+    leakage_diagnostic: dict[str, object]
 
 
 @dataclass(frozen=True)
 class CandidateResult:
     model_name: str
-    model: Pipeline
+    model: object
     val_score: float
     decision_threshold: float = 0.5
     regression_blend_alpha: float = 1.0
+    class_down_weight_boost: float = 1.0
+    regression_target: str = "log_return"
+    threshold_tuning: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
+class ClassifierValidationCandidate:
+    model_name: str
+    model: object
+    down_weight_boost: float
+    val_prob: np.ndarray
+    threshold: float
+    score_f1: float
+    score_acc: float
+    score: float
+
+
+class ProbabilityBlendClassifier:
+    def __init__(self, models: list[object], weights: list[float]) -> None:
+        if len(models) != len(weights) or not models:
+            raise ValueError("models and weights must have matching non-zero length")
+        weights_arr = np.asarray(weights, dtype=float)
+        total = float(np.sum(weights_arr))
+        if total <= 0:
+            raise ValueError("weights must sum to a positive value")
+        self.models = models
+        self.weights = (weights_arr / total).tolist()
+
+    def predict_proba(self, x: pd.DataFrame) -> np.ndarray:
+        prob_up = np.zeros(len(x), dtype=float)
+        for model, weight in zip(self.models, self.weights):
+            prob_up += float(weight) * np.asarray(model.predict_proba(x)[:, 1], dtype=float)
+        prob_up = np.clip(prob_up, 1e-6, 1.0 - 1e-6)
+        return np.column_stack([1.0 - prob_up, prob_up])
+
+    def predict(self, x: pd.DataFrame) -> np.ndarray:
+        return (self.predict_proba(x)[:, 1] >= 0.5).astype(int)
 
 
 def _triple_barrier_labels(
@@ -224,6 +285,76 @@ def _split_indices(length: int) -> tuple[int, int]:
     return train_end, val_end
 
 
+def _purged_split_frames(
+    enriched: pd.DataFrame,
+    train_end: int,
+    val_end: int,
+    steps_ahead: int,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    purge = max(int(steps_ahead), 1)
+    train_raw = enriched.iloc[:train_end]
+    val_raw = enriched.iloc[train_end:val_end]
+    test_raw = enriched.iloc[val_end:]
+
+    if len(train_raw) > purge:
+        train_df = train_raw.iloc[:-purge]
+    else:
+        train_df = train_raw.iloc[0:0]
+
+    if len(val_raw) > (purge * 2):
+        val_df = val_raw.iloc[purge:-purge]
+    else:
+        val_df = val_raw.iloc[0:0]
+
+    if len(test_raw) > purge:
+        test_df = test_raw.iloc[purge:]
+    else:
+        test_df = test_raw.iloc[0:0]
+
+    return train_df, val_df, test_df
+
+
+def _split_leakage_diagnostic(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    steps_ahead: int,
+) -> dict[str, object]:
+    if train_df.empty or val_df.empty or test_df.empty:
+        return {
+            "pass": False,
+            "reason": "empty_split_segment",
+            "required_gap_rows": int(max(steps_ahead, 1)),
+        }
+
+    train_last_idx = int(train_df.index.max())
+    val_first_idx = int(val_df.index.min())
+    val_last_idx = int(val_df.index.max())
+    test_first_idx = int(test_df.index.min())
+
+    gap_train_val = int(val_first_idx - train_last_idx - 1)
+    gap_val_test = int(test_first_idx - val_last_idx - 1)
+    required_gap = int(max(steps_ahead, 1))
+    split_gap_ok = gap_train_val >= required_gap and gap_val_test >= required_gap
+
+    time_order_ok = True
+    if "start_time" in train_df.columns and "start_time" in val_df.columns and "start_time" in test_df.columns:
+        train_last_time = float(train_df["start_time"].iloc[-1])
+        val_first_time = float(val_df["start_time"].iloc[0])
+        val_last_time = float(val_df["start_time"].iloc[-1])
+        test_first_time = float(test_df["start_time"].iloc[0])
+        time_order_ok = bool((train_last_time < val_first_time) and (val_last_time < test_first_time))
+
+    return {
+        "pass": bool(split_gap_ok and time_order_ok),
+        "required_gap_rows": required_gap,
+        "gap_train_to_val_rows": gap_train_val,
+        "gap_val_to_test_rows": gap_val_test,
+        "time_order_ok": bool(time_order_ok),
+        "split_gap_ok": bool(split_gap_ok),
+    }
+
+
 def min_samples_for_horizon(horizon: str) -> int:
     return int(HORIZON_MIN_SAMPLES.get(horizon, MIN_SAMPLES))
 
@@ -231,6 +362,69 @@ def min_samples_for_horizon(horizon: str) -> int:
 def clip_log_return_predictions(values: np.ndarray, horizon: str) -> np.ndarray:
     clip_value = float(HORIZON_LOG_RETURN_CLIP.get(horizon, 1.0))
     return np.clip(values, -clip_value, clip_value)
+
+
+def residual_clip_abs_from_close(current_close: np.ndarray | float, horizon: str) -> np.ndarray:
+    clip_value = float(HORIZON_LOG_RETURN_CLIP.get(horizon, 1.0))
+    close_array = np.asarray(current_close, dtype=float)
+    return np.maximum(close_array * (math.exp(clip_value) - 1.0), 1e-8)
+
+
+def _recent_sample_weights(length: int, min_weight: float = 0.35) -> np.ndarray:
+    if length <= 1:
+        return np.ones(max(length, 1), dtype=float)
+    min_weight = float(np.clip(min_weight, 0.05, 1.0))
+    exponents = np.linspace(math.log(min_weight), 0.0, num=length, dtype=float)
+    return np.exp(exponents)
+
+
+def regression_output_to_close(
+    raw_prediction: np.ndarray,
+    current_close: np.ndarray,
+    horizon: str,
+    regression_target: str,
+) -> np.ndarray:
+    raw = np.asarray(raw_prediction, dtype=float)
+    current = np.asarray(current_close, dtype=float)
+    if regression_target == "log_return":
+        clipped = clip_log_return_predictions(raw, horizon)
+        return np.maximum(current * np.exp(clipped), 1e-8)
+    if regression_target == "residual_from_persistence":
+        clip_abs = residual_clip_abs_from_close(current, horizon)
+        clipped_residual = np.clip(raw, -clip_abs, clip_abs)
+        return np.maximum(current + clipped_residual, 1e-8)
+    return np.maximum(raw, 1e-8)
+
+
+def apply_directional_tilt_to_close(
+    predicted_close: np.ndarray,
+    current_close: np.ndarray,
+    probability_up: np.ndarray,
+    volatility_feature: np.ndarray,
+    horizon: str,
+    gamma: float,
+) -> np.ndarray:
+    pred = np.asarray(predicted_close, dtype=float)
+    current = np.asarray(current_close, dtype=float)
+    if pred.size == 0:
+        return pred
+    if abs(float(gamma)) <= 1e-12:
+        return np.maximum(pred, 1e-8)
+
+    prob_up = np.asarray(probability_up, dtype=float)
+    vol = np.asarray(volatility_feature, dtype=float)
+    signal = np.clip((prob_up - 0.5) * 2.0, -1.0, 1.0)
+    vol = np.nan_to_num(vol, nan=0.0, posinf=0.0, neginf=0.0)
+    vol = np.clip(vol, 0.0, 0.50)
+    max_log_shift = float(HORIZON_DIRECTIONAL_TILT_MAX_LOG_SHIFT.get(horizon, 0.12))
+    log_shift = np.clip(float(gamma) * signal * vol, -max_log_shift, max_log_shift)
+    adjusted = pred * np.exp(log_shift)
+
+    clip_abs = residual_clip_abs_from_close(current, horizon)
+    lower = np.maximum(current - clip_abs, 1e-8)
+    upper = np.maximum(current + clip_abs, 1e-8)
+    adjusted = np.clip(adjusted, lower, upper)
+    return np.maximum(adjusted, 1e-8)
 
 
 def resolve_horizon_data(symbol: str, spec: HorizonSpec, min_samples: int | None = None) -> tuple[str, int, pd.DataFrame] | None:
@@ -268,11 +462,24 @@ def _prepare_supervised(df: pd.DataFrame, horizon: str, steps_ahead: int, min_sa
         return None
 
     train_end, val_end = _split_indices(len(enriched))
-    train_df = enriched.iloc[:train_end]
-    val_df = enriched.iloc[train_end:val_end]
-    test_df = enriched.iloc[val_end:]
+    train_df, val_df, test_df = _purged_split_frames(
+        enriched=enriched,
+        train_end=train_end,
+        val_end=val_end,
+        steps_ahead=steps_ahead,
+    )
+    leakage_diagnostic = _split_leakage_diagnostic(
+        train_df=train_df,
+        val_df=val_df,
+        test_df=test_df,
+        steps_ahead=steps_ahead,
+    )
 
     if len(test_df) < 30 or train_df["target_up"].nunique() < 2:
+        return None
+    if len(val_df) < 30:
+        return None
+    if not bool(leakage_diagnostic.get("pass")):
         return None
 
     split = SplitData(
@@ -282,17 +489,20 @@ def _prepare_supervised(df: pd.DataFrame, horizon: str, steps_ahead: int, min_sa
         x_test=test_df[selected_features],
         y_train_cls=train_df["target_up"],
         y_val_cls=val_df["target_up"],
-        y_test_cls=test_df["target_up"].to_numpy(dtype=float),
+        y_test_cls=test_df["target_up"].to_numpy(dtype=int),
         y_train_reg=train_df["target_log_return"],
         y_val_reg=val_df["target_log_return"],
         y_test_reg=test_df["target_log_return"].to_numpy(dtype=float),
+        current_close_train=train_df["close"].to_numpy(dtype=float),
         current_close_val=val_df["close"].to_numpy(dtype=float),
         current_close_test=test_df["close"].to_numpy(dtype=float),
+        target_close_train=train_df["target_close"].to_numpy(dtype=float),
         target_close_val=val_df["target_close"].to_numpy(dtype=float),
         target_close_test=test_df["target_close"].to_numpy(dtype=float),
         regime_train=np.argmax(train_df[["markov_prob_down", "markov_prob_flat", "markov_prob_up"]].to_numpy(dtype=float), axis=1),
         regime_val=np.argmax(val_df[["markov_prob_down", "markov_prob_flat", "markov_prob_up"]].to_numpy(dtype=float), axis=1),
         regime_test=np.argmax(test_df[["markov_prob_down", "markov_prob_flat", "markov_prob_up"]].to_numpy(dtype=float), axis=1),
+        leakage_diagnostic=leakage_diagnostic,
     )
     return enriched, split
 
@@ -358,6 +568,24 @@ def _classification_candidates() -> list[tuple[str, Pipeline]]:
                             n_estimators=180,
                             learning_rate=0.05,
                             max_depth=3,
+                            random_state=42,
+                        ),
+                    ),
+                ]
+            ),
+        ),
+        (
+            "hist_gradient_boosting_classifier",
+            Pipeline(
+                steps=[
+                    ("imputer", SimpleImputer(strategy="median")),
+                    (
+                        "model",
+                        HistGradientBoostingClassifier(
+                            max_iter=300,
+                            learning_rate=0.045,
+                            max_depth=6,
+                            min_samples_leaf=10,
                             random_state=42,
                         ),
                     ),
@@ -531,6 +759,36 @@ def _regression_candidates() -> list[tuple[str, Pipeline]]:
                 ]
             ),
         ),
+        (
+            "ridge_regressor",
+            Pipeline(
+                steps=[
+                    ("imputer", SimpleImputer(strategy="median")),
+                    ("scaler", StandardScaler()),
+                    ("model", Ridge(alpha=1.2, random_state=42)),
+                ]
+            ),
+        ),
+        (
+            "elastic_net_regressor",
+            Pipeline(
+                steps=[
+                    ("imputer", SimpleImputer(strategy="median")),
+                    ("scaler", StandardScaler()),
+                    ("model", ElasticNet(alpha=0.0015, l1_ratio=0.2, random_state=42, max_iter=4000)),
+                ]
+            ),
+        ),
+        (
+            "huber_regressor",
+            Pipeline(
+                steps=[
+                    ("imputer", SimpleImputer(strategy="median")),
+                    ("scaler", StandardScaler()),
+                    ("model", HuberRegressor(epsilon=1.35, alpha=0.0001, max_iter=500)),
+                ]
+            ),
+        ),
     ]
     if XGBRegressor is not None:
         base.append(
@@ -628,14 +886,32 @@ def _regression_candidates() -> list[tuple[str, Pipeline]]:
     return base + [("stacking_regressor", stacking)]
 
 
-def _class_balance_sample_weight(y: pd.Series) -> np.ndarray:
+def _class_balance_sample_weight(y: pd.Series, down_weight_boost: float = 1.0) -> np.ndarray:
     values = y.to_numpy(dtype=int)
     total = len(values)
     positive = max(int(np.sum(values == 1)), 1)
     negative = max(int(np.sum(values == 0)), 1)
     w_pos = total / (2.0 * positive)
     w_neg = total / (2.0 * negative)
+    if down_weight_boost > 1.0:
+        w_neg *= float(down_weight_boost)
     return np.where(values == 1, w_pos, w_neg).astype(float)
+
+
+def _down_weight_boost_candidates(y: pd.Series) -> list[float]:
+    values = y.to_numpy(dtype=int)
+    if values.size == 0:
+        return [1.0]
+    up_rate = float(np.mean(values == 1))
+    if up_rate >= 0.72:
+        return [1.0, 1.25, 1.5, 1.8, 2.2]
+    if up_rate >= 0.65:
+        return [1.0, 1.2, 1.45, 1.7]
+    if up_rate >= 0.58:
+        return [1.0, 1.15, 1.32, 1.5]
+    if up_rate >= 0.53:
+        return [1.0, 1.1, 1.22]
+    return [1.0]
 
 
 def _fit_pipeline_with_optional_weight(model: Pipeline, x: pd.DataFrame, y: pd.Series, sample_weight: np.ndarray | None) -> None:
@@ -649,54 +925,125 @@ def _fit_pipeline_with_optional_weight(model: Pipeline, x: pd.DataFrame, y: pd.S
         model.fit(x, y)
 
 
-def _best_threshold_for_f1(y_true: np.ndarray, y_prob: np.ndarray) -> tuple[float, float, float]:
+def _best_threshold_for_f1(y_true: np.ndarray, y_prob: np.ndarray) -> tuple[float, float, float, dict[str, object]]:
+    settings = get_settings()
+    if bool(settings.walk_forward_threshold_enabled):
+        threshold, wf_payload = choose_threshold_walk_forward(
+            y_true=np.asarray(y_true, dtype=int),
+            y_prob=np.asarray(y_prob, dtype=float),
+            folds=max(int(settings.walk_forward_threshold_folds), 2),
+        )
+        y_pred_wf = (np.asarray(y_prob, dtype=float) >= threshold).astype(int)
+        score_f1_wf = float(f1_score(y_true, y_pred_wf, zero_division=0))
+        score_acc_wf = float(accuracy_score(y_true, y_pred_wf))
+        return threshold, score_f1_wf, score_acc_wf, wf_payload
+
     baseline_pred = np.ones_like(y_true)
     baseline_f1 = float(f1_score(y_true, baseline_pred, zero_division=0))
     baseline_accuracy = float(accuracy_score(y_true, baseline_pred))
-    rows: list[tuple[float, float, float, float, float, float]] = []
-    for threshold in np.linspace(0.30, 0.75, 46):
+    quantiles = np.quantile(y_prob, np.linspace(0.05, 0.95, 19))
+    thresholds = np.unique(
+        np.concatenate(
+            [
+                np.linspace(0.20, 0.90, 71),
+                quantiles,
+                np.array([0.22, 0.28, 0.34, 0.5, 0.66, 0.72, 0.78, 0.84, 0.88]),
+            ]
+        )
+    )
+    rows: list[tuple[float, float, float, float, float, float, float]] = []
+    for threshold in thresholds:
         y_pred = (y_prob >= threshold).astype(int)
         score_f1 = float(f1_score(y_true, y_pred, zero_division=0))
         score_acc = float(accuracy_score(y_true, y_pred))
+        score_precision = float(precision_score(y_true, y_pred, zero_division=0))
         delta_f1 = score_f1 - baseline_f1
         delta_acc = score_acc - baseline_accuracy
-        score = min(delta_f1, delta_acc) + (0.35 * delta_f1) + (0.20 * delta_acc) + (0.01 * score_f1)
-        rows.append((float(threshold), score_f1, score_acc, delta_f1, delta_acc, score))
+        score = min(delta_f1, delta_acc) + (0.45 * delta_f1) + (0.25 * delta_acc) + (0.02 * score_precision)
+        rows.append((float(threshold), score_f1, score_acc, delta_f1, delta_acc, score_precision, score))
 
     # First priority: clear both classification gate dimensions.
     both_pass = [row for row in rows if row[3] > 0 and row[4] > 0]
     if both_pass:
-        best = max(both_pass, key=lambda row: (min(row[3], row[4]), row[3], row[4]))
-        return best[0], best[1], best[2]
+        best = max(both_pass, key=lambda row: (min(row[3], row[4]), row[3], row[4], row[5]))
+        return best[0], best[1], best[2], {"mode": "grid_search"}
 
     # Second priority: keep accuracy at/above baseline while maximizing F1 lift.
     acc_ok = [row for row in rows if row[4] >= 0]
     if acc_ok:
-        best = max(acc_ok, key=lambda row: (row[3], row[1], row[4], row[5]))
-        return best[0], best[1], best[2]
+        best = max(acc_ok, key=lambda row: (row[3], row[4], row[5], row[1], row[6]))
+        return best[0], best[1], best[2], {"mode": "grid_search"}
 
     # Fallback to previous composite scoring when no gate-friendly threshold exists.
-    best = max(rows, key=lambda row: (row[5], row[1], row[2]))
-    return best[0], best[1], best[2]
+    best = max(rows, key=lambda row: (row[6], row[1], row[2], row[5]))
+    return best[0], best[1], best[2], {"mode": "grid_search"}
 
 
 def _select_best_classifier(split: SplitData) -> CandidateResult:
     best: CandidateResult | None = None
-    sample_weight = _class_balance_sample_weight(split.y_train_cls)
+    val_candidates: list[ClassifierValidationCandidate] = []
     val_true = split.y_val_cls.to_numpy(dtype=int)
     val_baseline_pred = np.ones_like(val_true)
     val_baseline_f1 = float(f1_score(val_true, val_baseline_pred, zero_division=0))
     val_baseline_accuracy = float(accuracy_score(val_true, val_baseline_pred))
-    for model_name, model in _classification_candidates():
-        _fit_pipeline_with_optional_weight(model, split.x_train, split.y_train_cls, sample_weight)
-        val_prob = model.predict_proba(split.x_val)[:, 1]
-        threshold, score_f1, score_acc = _best_threshold_for_f1(val_true, val_prob)
-        delta_f1 = score_f1 - val_baseline_f1
-        delta_acc = score_acc - val_baseline_accuracy
-        # Rank by gate-oriented validation margins rather than raw F1 alone.
-        score = min(delta_f1, delta_acc) + (0.35 * delta_f1) + (0.20 * delta_acc)
-        if best is None or score > best.val_score:
-            best = CandidateResult(model_name=model_name, model=model, val_score=score, decision_threshold=threshold)
+    for down_weight_boost in _down_weight_boost_candidates(split.y_train_cls):
+        sample_weight = _class_balance_sample_weight(split.y_train_cls, down_weight_boost=down_weight_boost)
+        for model_name, model in _classification_candidates():
+            candidate_model = clone(model)
+            _fit_pipeline_with_optional_weight(candidate_model, split.x_train, split.y_train_cls, sample_weight)
+            val_prob = candidate_model.predict_proba(split.x_val)[:, 1]
+            threshold, score_f1, score_acc, tuning_payload = _best_threshold_for_f1(val_true, val_prob)
+            delta_f1 = score_f1 - val_baseline_f1
+            delta_acc = score_acc - val_baseline_accuracy
+            # Rank by gate-oriented validation margins rather than raw F1 alone.
+            score = min(delta_f1, delta_acc) + (0.45 * delta_f1) + (0.25 * delta_acc)
+            val_candidates.append(
+                ClassifierValidationCandidate(
+                    model_name=model_name,
+                    model=candidate_model,
+                    down_weight_boost=float(down_weight_boost),
+                    val_prob=val_prob,
+                    threshold=threshold,
+                    score_f1=score_f1,
+                    score_acc=score_acc,
+                    score=score,
+                )
+            )
+            if best is None or score > best.val_score:
+                best = CandidateResult(
+                    model_name=model_name,
+                    model=candidate_model,
+                    val_score=score,
+                    decision_threshold=threshold,
+                    class_down_weight_boost=float(down_weight_boost),
+                    threshold_tuning=tuning_payload,
+                )
+
+    if val_candidates:
+        top = sorted(val_candidates, key=lambda item: item.score, reverse=True)[:3]
+        for idx_a in range(len(top)):
+            for idx_b in range(idx_a + 1, len(top)):
+                cand_a = top[idx_a]
+                cand_b = top[idx_b]
+                for w_a in [0.5, 0.6, 0.7]:
+                    w_b = 1.0 - w_a
+                    blended_prob = (w_a * cand_a.val_prob) + (w_b * cand_b.val_prob)
+                    threshold, score_f1, score_acc, tuning_payload = _best_threshold_for_f1(val_true, blended_prob)
+                    delta_f1 = score_f1 - val_baseline_f1
+                    delta_acc = score_acc - val_baseline_accuracy
+                    score = min(delta_f1, delta_acc) + (0.45 * delta_f1) + (0.25 * delta_acc)
+                    if best is None or score > best.val_score:
+                        best = CandidateResult(
+                            model_name=f"blend_{cand_a.model_name}_{cand_b.model_name}_{w_a:.2f}",
+                            model=ProbabilityBlendClassifier(
+                                models=[cand_a.model, cand_b.model],
+                                weights=[w_a, w_b],
+                            ),
+                            val_score=score,
+                            decision_threshold=threshold,
+                            class_down_weight_boost=float((w_a * cand_a.down_weight_boost) + (w_b * cand_b.down_weight_boost)),
+                            threshold_tuning=tuning_payload,
+                        )
     if best is None:
         raise RuntimeError("No classification candidate available")
     return best
@@ -712,8 +1059,34 @@ def _best_regression_blend_alpha(
     candidates = np.unique(
         np.concatenate(
             [
-                np.linspace(0.0, 1.0, 41),
-                np.array([0.01, 0.02, 0.03, 0.04, 0.96, 0.97, 0.98, 0.99]),
+                np.linspace(0.0, 1.0, 81),
+                np.array(
+                    [
+                        0.0,
+                        0.001,
+                        0.002,
+                        0.003,
+                        0.004,
+                        0.005,
+                        0.0075,
+                        0.01,
+                        0.015,
+                        0.02,
+                        0.03,
+                        0.04,
+                        0.05,
+                        0.95,
+                        0.96,
+                        0.97,
+                        0.98,
+                        0.985,
+                        0.99,
+                        0.995,
+                        0.998,
+                        0.999,
+                        1.0,
+                    ]
+                ),
             ]
         )
     )
@@ -723,24 +1096,127 @@ def _best_regression_blend_alpha(
         if rmse < best_rmse:
             best_alpha = float(alpha)
             best_rmse = rmse
+        elif math.isclose(rmse, best_rmse, rel_tol=1e-12, abs_tol=1e-12) and float(alpha) > best_alpha:
+            # If multiple blend weights are equally good on validation,
+            # prefer the one that keeps more model signal than pure baseline.
+            best_alpha = float(alpha)
     return best_alpha, best_rmse
+
+
+def _best_directional_tilt_gamma(
+    y_true: np.ndarray,
+    current_close: np.ndarray,
+    base_pred_close: np.ndarray,
+    prob_up: np.ndarray,
+    volatility_20: np.ndarray,
+    horizon: str,
+) -> tuple[float, float]:
+    baseline_rmse = float(math.sqrt(mean_squared_error(y_true, base_pred_close)))
+    best_gamma = 0.0
+    best_rmse = baseline_rmse
+    candidates = np.array(
+        [
+            0.0,
+            -1.25,
+            -1.0,
+            -0.75,
+            -0.5,
+            -0.25,
+            -0.1,
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            1.0,
+            1.25,
+            1.5,
+        ],
+        dtype=float,
+    )
+    for gamma in candidates:
+        adjusted = apply_directional_tilt_to_close(
+            predicted_close=base_pred_close,
+            current_close=current_close,
+            probability_up=prob_up,
+            volatility_feature=volatility_20,
+            horizon=horizon,
+            gamma=float(gamma),
+        )
+        rmse = float(math.sqrt(mean_squared_error(y_true, adjusted)))
+        if rmse < best_rmse - 1e-12:
+            best_gamma = float(gamma)
+            best_rmse = rmse
+            continue
+        if math.isclose(rmse, best_rmse, rel_tol=1e-12, abs_tol=1e-12) and abs(float(gamma)) < abs(best_gamma):
+            best_gamma = float(gamma)
+    return best_gamma, best_rmse
 
 
 def _select_best_regressor(split: SplitData, horizon: str) -> CandidateResult:
     best: CandidateResult | None = None
+    recent_weight = _recent_sample_weights(len(split.x_train))
+    fit_weight_modes: list[tuple[str, np.ndarray | None]] = [("uniform", None)]
+    if len(split.x_train) >= 200:
+        fit_weight_modes.append(("recent", recent_weight))
+
     for model_name, model in _regression_candidates():
-        model.fit(split.x_train, split.y_train_reg)
-        val_pred_log_return = model.predict(split.x_val)
-        val_pred_log_return = clip_log_return_predictions(val_pred_log_return, horizon)
-        val_pred_close_model = split.current_close_val * np.exp(val_pred_log_return)
-        alpha, best_rmse = _best_regression_blend_alpha(
-            y_true=split.target_close_val,
-            y_pred_model=val_pred_close_model,
-            y_pred_baseline=split.current_close_val,
-        )
-        score = -best_rmse
-        if best is None or score > best.val_score:
-            best = CandidateResult(model_name=model_name, model=model, val_score=score, regression_blend_alpha=alpha)
+        for weight_mode, sample_weight in fit_weight_modes:
+            tuned_name = model_name if weight_mode == "uniform" else f"{model_name}_{weight_mode}"
+            log_model = clone(model)
+            _fit_pipeline_with_optional_weight(log_model, split.x_train, split.y_train_reg, sample_weight)
+            val_pred_log_return = np.asarray(log_model.predict(split.x_val), dtype=float)
+            val_pred_close_model = regression_output_to_close(
+                raw_prediction=val_pred_log_return,
+                current_close=split.current_close_val,
+                horizon=horizon,
+                regression_target="log_return",
+            )
+            alpha_log, rmse_log = _best_regression_blend_alpha(
+                y_true=split.target_close_val,
+                y_pred_model=val_pred_close_model,
+                y_pred_baseline=split.current_close_val,
+            )
+
+            residual_model = clone(model)
+            y_train_residual = pd.Series(
+                split.target_close_train - split.current_close_train,
+                index=split.y_train_reg.index,
+            )
+            _fit_pipeline_with_optional_weight(residual_model, split.x_train, y_train_residual, sample_weight)
+            val_pred_residual = np.asarray(residual_model.predict(split.x_val), dtype=float)
+            val_pred_close_residual = regression_output_to_close(
+                raw_prediction=val_pred_residual,
+                current_close=split.current_close_val,
+                horizon=horizon,
+                regression_target="residual_from_persistence",
+            )
+            alpha_residual, rmse_residual = _best_regression_blend_alpha(
+                y_true=split.target_close_val,
+                y_pred_model=val_pred_close_residual,
+                y_pred_baseline=split.current_close_val,
+            )
+
+            residual_rel_improvement = (rmse_log - rmse_residual) / max(rmse_log, 1e-12)
+            if residual_rel_improvement >= RESIDUAL_TARGET_MIN_REL_IMPROVEMENT:
+                candidate_model = residual_model
+                candidate_alpha = alpha_residual
+                candidate_rmse = rmse_residual
+                candidate_target = "residual_from_persistence"
+            else:
+                candidate_model = log_model
+                candidate_alpha = alpha_log
+                candidate_rmse = rmse_log
+                candidate_target = "log_return"
+
+            score = -candidate_rmse
+            if best is None or score > best.val_score:
+                best = CandidateResult(
+                    model_name=tuned_name,
+                    model=candidate_model,
+                    val_score=score,
+                    regression_blend_alpha=candidate_alpha,
+                    regression_target=candidate_target,
+                )
     if best is None:
         raise RuntimeError("No regression candidate available")
     return best
@@ -917,13 +1393,16 @@ def _train_regime_models(split: SplitData, horizon: str) -> tuple[dict[str, Pipe
                 y_train_reg=y_reg_sub,
                 y_val_reg=split.y_val_reg,
                 y_test_reg=split.y_test_reg,
+                current_close_train=split.current_close_train[idx],
                 current_close_val=split.current_close_val,
                 current_close_test=split.current_close_test,
+                target_close_train=split.target_close_train[idx],
                 target_close_val=split.target_close_val,
                 target_close_test=split.target_close_test,
                 regime_train=split.regime_train,
                 regime_val=split.regime_val,
                 regime_test=split.regime_test,
+                leakage_diagnostic=split.leakage_diagnostic,
             )
         )
         reg_best = _select_best_regressor(
@@ -938,13 +1417,16 @@ def _train_regime_models(split: SplitData, horizon: str) -> tuple[dict[str, Pipe
                 y_train_reg=y_reg_sub,
                 y_val_reg=split.y_val_reg,
                 y_test_reg=split.y_test_reg,
+                current_close_train=split.current_close_train[idx],
                 current_close_val=split.current_close_val,
                 current_close_test=split.current_close_test,
+                target_close_train=split.target_close_train[idx],
                 target_close_val=split.target_close_val,
                 target_close_test=split.target_close_test,
                 regime_train=split.regime_train,
                 regime_val=split.regime_val,
                 regime_test=split.regime_test,
+                leakage_diagnostic=split.leakage_diagnostic,
             ),
             horizon,
         )
@@ -988,11 +1470,40 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
     if settings.regime_models_enabled:
         regime_cls_models, regime_reg_models = _train_regime_models(split, spec.label)
 
+    reg_blend_alpha = float(np.clip(reg_best.regression_blend_alpha, 0.0, 1.0))
+    val_cls_prob = cls_best.model.predict_proba(split.x_val)[:, 1]
+    val_reg_raw = np.asarray(reg_best.model.predict(split.x_val), dtype=float)
+    val_model_pred_close = regression_output_to_close(
+        raw_prediction=val_reg_raw,
+        current_close=split.current_close_val,
+        horizon=spec.label,
+        regression_target=reg_best.regression_target,
+    )
+    val_reg_pred = (reg_blend_alpha * val_model_pred_close) + ((1.0 - reg_blend_alpha) * split.current_close_val)
+    val_rmse_before_tilt = float(math.sqrt(mean_squared_error(split.target_close_val, val_reg_pred)))
+    val_vol_feature = (
+        split.x_val["volatility_20"].to_numpy(dtype=float)
+        if "volatility_20" in split.x_val.columns
+        else np.zeros(len(split.x_val), dtype=float)
+    )
+    directional_tilt_gamma, val_rmse_after_tilt = _best_directional_tilt_gamma(
+        y_true=split.target_close_val,
+        current_close=split.current_close_val,
+        base_pred_close=val_reg_pred,
+        prob_up=val_cls_prob,
+        volatility_20=val_vol_feature,
+        horizon=spec.label,
+    )
+
     cls_prob = cls_best.model.predict_proba(split.x_test)[:, 1]
     cls_pred = (cls_prob >= cls_best.decision_threshold).astype(int)
-    reg_pred_log_return = reg_best.model.predict(split.x_test)
-    reg_pred_log_return = clip_log_return_predictions(reg_pred_log_return, spec.label)
-    reg_pred = split.current_close_test * np.exp(reg_pred_log_return)
+    reg_raw = np.asarray(reg_best.model.predict(split.x_test), dtype=float)
+    reg_pred = regression_output_to_close(
+        raw_prediction=reg_raw,
+        current_close=split.current_close_test,
+        horizon=spec.label,
+        regression_target=reg_best.regression_target,
+    )
 
     if settings.regime_models_enabled and (regime_cls_models or regime_reg_models):
         blended_prob = cls_prob.copy()
@@ -1006,15 +1517,31 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
                 regime_prob = regime_cls_models[regime_name].predict_proba(split.x_test.iloc[mask])[:, 1]
                 blended_prob[mask] = regime_prob
             if regime_name in regime_reg_models:
-                regime_reg_log = regime_reg_models[regime_name].predict(split.x_test.iloc[mask])
-                regime_reg_log = clip_log_return_predictions(np.asarray(regime_reg_log, dtype=float), spec.label)
-                blended_reg[mask] = split.current_close_test[mask] * np.exp(regime_reg_log)
+                regime_raw = np.asarray(regime_reg_models[regime_name].predict(split.x_test.iloc[mask]), dtype=float)
+                blended_reg[mask] = regression_output_to_close(
+                    raw_prediction=regime_raw,
+                    current_close=split.current_close_test[mask],
+                    horizon=spec.label,
+                    regression_target=reg_best.regression_target,
+                )
         cls_prob = blended_prob
         cls_pred = (cls_prob >= cls_best.decision_threshold).astype(int)
         reg_pred = blended_reg
 
-    reg_blend_alpha = float(np.clip(reg_best.regression_blend_alpha, 0.0, 1.0))
     reg_pred = (reg_blend_alpha * reg_pred) + ((1.0 - reg_blend_alpha) * split.current_close_test)
+    test_vol_feature = (
+        split.x_test["volatility_20"].to_numpy(dtype=float)
+        if "volatility_20" in split.x_test.columns
+        else np.zeros(len(split.x_test), dtype=float)
+    )
+    reg_pred = apply_directional_tilt_to_close(
+        predicted_close=reg_pred,
+        current_close=split.current_close_test,
+        probability_up=cls_prob,
+        volatility_feature=test_vol_feature,
+        horizon=spec.label,
+        gamma=directional_tilt_gamma,
+    )
 
     metrics = _metrics(
         y_true_cls=split.y_test_cls,
@@ -1022,6 +1549,15 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         y_proba_cls=cls_prob,
         y_true_reg=split.target_close_test,
         y_pred_reg=reg_pred,
+    )
+    metric_confidence_intervals = bootstrap_metric_confidence_intervals(
+        y_true_cls=split.y_test_cls,
+        y_pred_cls=cls_pred,
+        y_true_reg=split.target_close_test,
+        y_pred_reg=reg_pred,
+        n_bootstrap=max(int(settings.metric_ci_bootstrap_samples), 80),
+        confidence=float(settings.metric_ci_level),
+        random_seed=42,
     )
     confidence_slice = _confidence_slice_metrics(
         y_true_cls=split.y_test_cls,
@@ -1035,13 +1571,48 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         y_true_reg=split.target_close_test,
         current_close=split.current_close_test,
     )
+    execution_metrics = execution_aware_metrics(
+        current_close=split.current_close_test,
+        target_close=split.target_close_test,
+        direction_up=cls_pred,
+        horizon=spec.label,
+        fee_bps=float(settings.execution_fee_bps),
+        slippage_bps=float(settings.execution_slippage_bps),
+        max_turnover_per_step=float(settings.execution_max_turnover_per_step),
+    )
+    paper_trading = paper_trading_metrics(
+        current_close=split.current_close_test,
+        target_close=split.target_close_test,
+        direction_up=cls_pred,
+        fee_bps=float(settings.execution_fee_bps),
+        slippage_bps=float(settings.execution_slippage_bps),
+        max_turnover_per_step=float(settings.execution_max_turnover_per_step),
+        initial_capital=float(settings.paper_trade_initial_capital),
+    )
+    walk_forward_gate = strict_gate_walk_forward_diagnostic(
+        y_true_cls=split.y_test_cls,
+        y_prob_cls=cls_prob,
+        y_true_reg=split.target_close_test,
+        y_pred_reg=reg_pred,
+        baseline_reg=split.current_close_test,
+        decision_threshold=float(cls_best.decision_threshold),
+        folds=max(int(settings.walk_forward_gate_folds), 2),
+    )
+    walk_forward_mode = settings.walk_forward_gate_mode.strip().lower()
+    walk_forward_enforced = walk_forward_mode == "strict"
     martingale_diag = _martingale_residual_diagnostic(split.target_close_test, reg_pred)
     martingale_enforced = settings.martingale_gate_mode.strip().lower() == "strict"
+    walk_forward_pass = True
+    leakage_pass = bool(split.leakage_diagnostic.get("pass", False))
+    if walk_forward_enforced:
+        walk_forward_pass = bool(walk_forward_gate.get("enabled")) and bool(walk_forward_gate.get("strict_pass_all_folds"))
 
     promotion_pass = (
         metrics["f1"] > baseline["f1"]
         and metrics["accuracy"] > baseline["accuracy"]
         and metrics["rmse"] < baseline["rmse"]
+        and leakage_pass
+        and walk_forward_pass
         and (bool(martingale_diag["pass"]) if martingale_enforced else True)
     )
 
@@ -1052,6 +1623,10 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         failed_reasons.append("classification_accuracy_not_above_baseline")
     if not (metrics["rmse"] < baseline["rmse"]):
         failed_reasons.append("regression_rmse_not_below_baseline")
+    if not leakage_pass:
+        failed_reasons.append("data_leakage_check_not_passed")
+    if walk_forward_enforced and not walk_forward_pass:
+        failed_reasons.append("walk_forward_gate_not_passed")
     if martingale_enforced and (not bool(martingale_diag["pass"])):
         failed_reasons.append("martingale_residual_autocorrelation_too_high")
 
@@ -1088,7 +1663,11 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         "selected_models": {
             "classifier": cls_best.model_name,
             "regressor": reg_best.model_name,
+            "classifier_down_weight_boost": float(cls_best.class_down_weight_boost),
+            "classifier_threshold_tuning": cls_best.threshold_tuning or {},
+            "regression_target": reg_best.regression_target,
             "regression_blend_alpha": reg_blend_alpha,
+            "directional_tilt_gamma": float(directional_tilt_gamma),
         },
         "feature_columns": split.feature_columns,
         "metrics": metrics,
@@ -1096,15 +1675,29 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         "near_pass_delta": _near_pass_delta(metrics, baseline),
         "martingale_diagnostic": martingale_diag,
         "martingale_enforced": martingale_enforced,
-        "regression_target": "log_return",
-        "regression_output_transform": "predicted_close = current_close * exp(clipped_log_return)",
+        "regression_target": reg_best.regression_target,
+        "regression_output_transform": (
+            "predicted_close = current_close * exp(clipped_log_return)"
+            if reg_best.regression_target == "log_return"
+            else "predicted_close = current_close + clipped_residual"
+        ),
         "regression_blend_alpha": reg_blend_alpha,
+        "directional_tilt_gamma": float(directional_tilt_gamma),
+        "validation_rmse_before_tilt": val_rmse_before_tilt,
+        "validation_rmse_after_tilt": val_rmse_after_tilt,
         "classification_label_mode": settings.classification_label_mode,
         "triple_barrier_sigma_mult": float(settings.triple_barrier_sigma_mult),
         "regime_models_enabled": bool(settings.regime_models_enabled),
         "log_return_clip": float(HORIZON_LOG_RETURN_CLIP.get(spec.label, 1.0)),
         "confidence_slice": confidence_slice,
         "regime_breakdown": regime_breakdown,
+        "metric_confidence_intervals": metric_confidence_intervals,
+        "data_leakage_checks": split.leakage_diagnostic,
+        "execution_aware_metrics": execution_metrics,
+        "paper_trading_metrics": paper_trading,
+        "walk_forward_gate": walk_forward_gate,
+        "walk_forward_mode": walk_forward_mode,
+        "walk_forward_enforced": walk_forward_enforced,
         "top_features": {
             "classifier": _extract_top_feature_importance(cls_best.model, split.feature_columns),
             "regressor": _extract_top_feature_importance(reg_best.model, split.feature_columns),
@@ -1115,6 +1708,8 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
             "rules": {
                 "classification": ["f1 > baseline.f1", "accuracy > baseline.accuracy"],
                 "regression": ["rmse < baseline.rmse"],
+                "leakage": ["no train/val/test overlap with purge gap >= steps_ahead"],
+                "walk_forward": ["strict_pass_all_folds == true (strict mode only)"],
                 "stochastic": ["abs(residual_acf1) <= 0.10 (strict mode only)"],
             },
         },
