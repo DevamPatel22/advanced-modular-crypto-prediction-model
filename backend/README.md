@@ -91,6 +91,7 @@ python scripts/data_quality_report.py \
   --symbols BTC-USD,ETH-USD,SOL-USD \
   --granularities 1m,5m,15m,1h,6h,1d \
   --min-coverage-ratio-map 1m:0.80,5m:0.82,15m:0.85,1h:0.88,6h:0.90,1d:0.92 \
+  --max-cross-symbol-lag-steps-map 1m:480,5m:192,15m:96,1h:48,6h:20,1d:10 \
   --output reports/data_quality_report.json
 ```
 
@@ -101,6 +102,11 @@ Key gates checked per symbol/granularity:
 - timestamp interval consistency
 - gap ratio threshold
 
+Cross-symbol synchronization gate (per granularity):
+
+- latest timestamp spread across requested symbols must stay within configured step limits
+- blocks retraining when one symbol is materially stale relative to others (e.g., ETH/SOL lagging BTC)
+
 Use retrain quality gate to block training when data is weak:
 
 ```bash
@@ -109,6 +115,12 @@ python scripts/daily_retrain.py \
   --enforce-data-quality \
   --symbols BTC-USD,ETH-USD,SOL-USD
 ```
+
+Quality gate remediation behavior:
+
+- automatic backfill remediation runs for failing symbols/granularities (enabled by default)
+- unresolved failing pairs are excluded for the current run instead of aborting all training
+- exclusions are passed into training as `--exclude-symbol-horizons` and stored in retrain reports
 
 Run explicit SLA gate (quality + source uptime):
 
@@ -155,17 +167,24 @@ python scripts/train_all_symbols.py \
   --output reports/summary_report_core.json
 ```
 
+Optional training controls:
+
+- `--exclude-symbol-horizons BTC-USD:6h,ETH-USD:1d` to skip specific pairs
+- `--asof-cutoff-map 1m:1772559060,1h:1772557200` for explicit synchronized cutoffs
+- when `TRAIN_ASOF_SYNC_ENABLED=true`, cutoffs are auto-derived per granularity from dataset coverage
+
 Training targets horizons:
 
 - `5m`, `1h`, `3h`, `6h`, `12h`, `1d`, `1w`, `1mo`, `3mo`
 
 Candidate models per symbol+horizon:
 
-- Classification: Logistic Regression (baseline) + Gradient Boosting
-- Classification ensemble: Logistic Regression, RandomForest, ExtraTrees, GradientBoosting, StackingClassifier
-  plus validation-tuned probability blending of top classifier candidates for near-pass gate optimization.
+- Classification (theory mode): Logistic Regression + HistGradientBoosting (+ optional ensemble challenger).
+  Expanded model zoo remains available via `MODEL_CANDIDATE_MODE=expanded`.
+  Validation-tuned probability blending of top classifiers remains enabled for near-pass optimization.
 - Meta-labeling layer: a secondary classifier learns when to act (or abstain) on base signals using edge/probability/regime features.
-- Regression ensemble: RandomForest, GradientBoosting, HistGradientBoosting, ExtraTrees, StackingRegressor
+- Regression (theory mode): BayesianRidge ARX, Ridge, Huber, HistGradientBoosting (+ optional ensemble challenger).
+  Expanded model zoo remains available via `MODEL_CANDIDATE_MODE=expanded`.
   Regression target is modeled as `log_return` and transformed back to price with horizon-aware clipping to reduce extreme RMSE outliers.
   Training now also evaluates a residual target (`target_close - current_close`) and promotes it only when it gives a minimum relative RMSE improvement over log-return on validation.
   Final regression output uses a validation-optimized blend with persistence (`regression_blend_alpha`) to reduce RMSE drift.
@@ -180,11 +199,16 @@ Stochastic feature layer (used by all model candidates):
 
 Promotion gate (must pass all):
 
-- classification `f1 > baseline.f1`
-- classification `accuracy > baseline.accuracy`
-- regression `rmse < baseline.rmse`
-- execution `net_mean_return > baseline.net_mean_return` (when `PROMOTION_REQUIRE_PNL_ABOVE_BASELINE=true`)
+- returns-first execution edge:
+  `net_mean_return > selected_financial_baseline.net_mean_return`
+- optional return constraints:
+  `net_mean_return > 0`, `sharpe_net > baseline.sharpe_net`, `total_return > baseline.total_return`
 - risk `max_drawdown >= max(PROMOTION_MAX_DRAWDOWN_LIMIT, baseline.max_drawdown)`
+- optional predictive edge checks:
+  classification `f1 > baseline.f1` and `accuracy > baseline.accuracy`
+  regression `rmse < baseline.rmse`
+- leakage diagnostics must pass
+- walk-forward strict mode must pass when enabled
 - martingale diagnostic `abs(residual_acf1) <= 0.10` when `MARTINGALE_GATE_MODE=strict`
 
 Training reports additionally include:
@@ -195,6 +219,10 @@ Training reports additionally include:
 - purged split leakage diagnostics (must pass to qualify)
 - paper-trading metrics (`equity`, `drawdown`, `VaR/CVaR`, `turnover`) with configured fees/slippage
 - near-pass deltas vs baseline and top feature importance lists for targeted retraining
+- alpha-hypothesis diagnostics (information coefficient, decile spread, sign alignment) for
+  `reversal_pressure_5`, `mean_reversion_z_20`, `volatility_cluster_20_60`, `kalman_level_ratio`, and `kalman_trend_5`
+- alpha kill-switch diagnostics showing which weak signals were disabled before training
+- ablation metrics comparing with-vs-without meta abstention for execution and paper-trading outcomes
 
 Horizon data readiness uses adaptive minimum sample targets (short horizons require more history than long horizons) so early-stage training can activate qualified pairs sooner while still keeping gate checks strict.
 
@@ -255,6 +283,7 @@ backend/data/models/
   <model_version>/
     manifest.json
     artifact_manifest.json
+    dataset_manifest.json
     <symbol>/
       cls_<horizon>.joblib
       reg_<horizon>.joblib
@@ -293,6 +322,7 @@ Reports:
   - `CONFORMAL_ALPHA=0.10`
   - `SLA_MIN_LIVE_SOURCE_RATIO=0.70`
   - `SLA_MAX_STALE_CACHE_RATIO=0.30`
+  - quality preflight optionally supports `--max-cross-symbol-lag-steps-map` for freshness parity enforcement
   - `CI_GATE_MAX_AGE_HOURS=24`
   - `EXECUTION_FEE_BPS=4.0`
   - `EXECUTION_SLIPPAGE_BPS=3.0`
@@ -300,6 +330,25 @@ Reports:
   - `PAPER_TRADE_INITIAL_CAPITAL=10000`
   - `PROMOTION_REQUIRE_PNL_ABOVE_BASELINE=true`
   - `PROMOTION_MAX_DRAWDOWN_LIMIT=-0.45`
+  - `PROMOTION_GATE_MODE=returns_first`
+  - `PROMOTION_REQUIRE_POSITIVE_NET_RETURN=true`
+  - `PROMOTION_REQUIRE_SHARPE_ABOVE_BASELINE=true`
+  - `PROMOTION_REQUIRE_TOTAL_RETURN_ABOVE_BASELINE=true`
+  - `PROMOTION_REQUIRE_CLASSIFICATION_EDGE=false`
+  - `PROMOTION_REQUIRE_REGRESSION_EDGE=false`
+  - `PROMOTION_MIN_SHARPE_NET=0.0`
+  - `POSITION_TARGET_ANNUAL_VOL=0.35`
+  - `POSITION_MAX_LEVERAGE=1.0`
+  - `TRADE_EDGE_UNCERTAINTY_BUFFER_MULT=1.0`
+  - `MODEL_CANDIDATE_MODE=theory|expanded`
+  - `MODEL_ENABLE_ENSEMBLE_CHALLENGER=true`
+  - `ALPHA_KILL_SWITCH_ENABLED=true`
+  - `ALPHA_KILL_LOOKBACK_ROWS=360`
+  - `ALPHA_KILL_MIN_IC=0.005`
+  - `ALPHA_KILL_MIN_DECILE_SPREAD_BPS=0.5`
+  - `ALPHA_KILL_MIN_SIGN_ALIGNMENT=0.51`
+  - `ALPHA_KILL_MIN_SURVIVAL_RATIO=0.50`
+  - `TRAIN_ASOF_SYNC_ENABLED=true`
   - `METRIC_CI_BOOTSTRAP_SAMPLES=400`
   - `METRIC_CI_LEVEL=0.95`
 - Flow:

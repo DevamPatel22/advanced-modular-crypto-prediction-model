@@ -21,16 +21,20 @@ Build a reliable, scalable prediction platform that can evolve from MVP analytic
 - Background ingestion loop for tradable symbols enabled via env config
 - Model registry + artifact-backed prediction inference with automatic fallback
 - All-symbol training and promotion scripts with per-horizon quality gates
+- Returns-first promotion gate with execution/risk constraints and optional predictive-edge checks
 - Stochastic feature layer (GBM + Markov regime probabilities) and martingale residual diagnostic in promotion gate
 - Triple-barrier classification labels, regime-aware evaluation breakdown, and confidence-slice diagnostics in training reports
+- Explicit alpha-hypothesis diagnostics in training reports (signal IC, decile spread, sign alignment) for mean-reversion/volatility-cluster signals
+- Alpha kill-switch governance to disable weak hypotheses by rolling signal-quality diagnostics
 - Near-promotion tuning path: expanded threshold optimization, classifier probability blending, and dynamic class-balance weighting
 - Horizon-specific feature sets, calibrated per-horizon decision thresholds, and regime-routed model artifacts
+- Structured time-series feature expansion with Kalman trend features and volatility-clustering/mean-reversion factors (`FEATURE_VERSION=v4`)
 - Dual regression target selection (`log_return` and residual-from-persistence) with clipped transforms and staged martingale gate (`bootstrap` to `strict`)
 - Validation-optimized regression blend (`regression_blend_alpha`) persisted per symbol/horizon for inference stability
 - Inference reliability guard: low-confidence model outputs can abstain to safe fallback based on config threshold
 - Meta-labeling policy layer to abstain from low-edge trades even when base direction is available
 - Conformal prediction intervals in API output (`conformal_low_usd`, `conformal_high_usd`, `conformal_confidence`)
-- Promotion gate now includes execution/risk constraints (net mean return vs baseline and drawdown floor)
+- Promotion gate now uses a returns-first policy (net return, Sharpe, total return, drawdown, leakage/walk-forward)
 - Source credibility safeguards in market data ingestion (integrity/freshness/divergence checks)
 - Bootstrap promotions now focus on short horizons first (`5m,1h,3h,6h,12h`) for faster first qualified pairs
 - Interactive frontend with:
@@ -78,12 +82,23 @@ cd backend
 python scripts/train_all_symbols.py --model-version daily-$(date +%Y%m%d) --output reports/summary_report.json
 ```
 
+Optional controls:
+
+- `--exclude-symbol-horizons BTC-USD:6h,ETH-USD:1d` to skip weak/unhealthy pairs for a run
+- `--asof-cutoff-map 1m:1772559060,1h:1772557200` to enforce explicit synchronized training cutoffs
+
 Or run full daily pipeline (ingest -> train -> promote):
 
 ```bash
 cd backend
 python scripts/daily_retrain.py --phase phase3
 ```
+
+When `--enforce-data-quality` is enabled, retrain now supports:
+
+- auto-remediation backfill passes for failing symbols/granularities
+- automatic exclusion of unresolved symbol+horizon pairs so healthy pairs still train/promote
+- exclusion metadata persisted in retrain report and experiment event logs
 
 Fast near-promotion cycle (for continuous incremental promotion work on key symbols):
 
@@ -127,12 +142,14 @@ Institutional-grade additions now included:
 - purged split leakage diagnostics + bootstrap confidence intervals
 - execution-aware evaluation metrics (fee/slippage/turnover-adjusted)
 - paper-trading PnL metrics (equity, drawdown, VaR/CVaR, turnover)
+- synchronized as-of training cutoffs per granularity to prevent cross-symbol leakage from uneven latest timestamps
 - hard SLA gate for data quality + source uptime before retraining/promotion
+- cross-symbol freshness parity gate (per granularity) to block training when symbols are materially out-of-sync
 - portfolio risk API (`/api/v1/risk/portfolio-snapshot`, `/api/v1/risk/limit-check`)
 - expanded free proxy features for derivatives/microstructure/on-chain signals
 - experiment event logging and safe auto-rollback guard tooling
 - immutable artifact checksum manifests for each model version
-- daily scorecard + model-card generation for decision transparency
+- daily scorecard + model-card generation for decision transparency, including meta-ablation deltas
 
 One-command reproducibility run (ingest -> quality-gated retrain -> promote -> rollback guard dry-run):
 

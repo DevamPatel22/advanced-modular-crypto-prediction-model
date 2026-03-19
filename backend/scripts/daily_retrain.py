@@ -19,6 +19,7 @@ from app.config import get_settings
 from app.services.ingestion import run_ingestion_cycle
 from app.services.experiment_tracker import log_experiment_event
 from app.services.model_registry import ModelRegistry
+from app.ml.training import all_horizon_specs
 
 
 def _run_command(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -30,6 +31,55 @@ def _run_command(args: list[str]) -> subprocess.CompletedProcess[str]:
 def _today_version() -> str:
     """Internal helper to compute today version."""
     return datetime.now(tz=UTC).strftime("daily-%Y%m%d-%H%M%S")
+
+
+def _parse_csv(raw: str) -> list[str]:
+    """Parse comma-separated values."""
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _excluded_pairs_from_quality_report(
+    *,
+    quality_payload: dict[str, object],
+    symbols: list[str],
+    horizons: list[str],
+) -> set[tuple[str, str]]:
+    """Map failing quality checks into symbol+horizon exclusions."""
+    pair_set: set[tuple[str, str]] = set()
+    all_specs = {spec.label: spec for spec in all_horizon_specs()}
+    selected_specs = [all_specs[horizon] for horizon in horizons if horizon in all_specs]
+    if not selected_specs:
+        return pair_set
+
+    def _horizons_for_granularity(granularity: str) -> list[str]:
+        hits: list[str] = []
+        for spec in selected_specs:
+            if any(candidate_granularity == granularity for candidate_granularity, _steps in spec.candidates):
+                hits.append(spec.label)
+        return hits
+
+    failing_pairs = quality_payload.get("failing_pairs", [])
+    if isinstance(failing_pairs, list):
+        for item in failing_pairs:
+            if not isinstance(item, dict):
+                continue
+            symbol = str(item.get("symbol", "")).upper()
+            granularity = str(item.get("granularity", ""))
+            if not symbol or symbol not in symbols:
+                continue
+            for horizon in _horizons_for_granularity(granularity):
+                pair_set.add((symbol, horizon))
+
+    failing_cross_symbol = quality_payload.get("failing_cross_symbol_freshness", [])
+    if isinstance(failing_cross_symbol, list):
+        for item in failing_cross_symbol:
+            if not isinstance(item, dict):
+                continue
+            granularity = str(item.get("granularity", ""))
+            for symbol in symbols:
+                for horizon in _horizons_for_granularity(granularity):
+                    pair_set.add((symbol, horizon))
+    return pair_set
 
 
 def main() -> None:
@@ -80,6 +130,35 @@ def main() -> None:
         help="Optional per-granularity coverage floors, format 1m:0.8,1h:0.9",
     )
     parser.add_argument(
+        "--quality-max-cross-symbol-lag-steps-map",
+        default="",
+        help="Optional cross-symbol freshness spread ceilings by granularity, format 1m:480,1h:48",
+    )
+    parser.add_argument(
+        "--auto-remediate-data-quality",
+        dest="auto_remediate_data_quality",
+        action="store_true",
+        help="Attempt backfill remediation and pair-level exclusion when quality preflight fails",
+    )
+    parser.add_argument(
+        "--no-auto-remediate-data-quality",
+        dest="auto_remediate_data_quality",
+        action="store_false",
+        help="Disable automatic remediation fallback when quality preflight fails",
+    )
+    parser.add_argument(
+        "--remediation-max-passes",
+        type=int,
+        default=2,
+        help="Max backfill passes during automatic quality remediation",
+    )
+    parser.add_argument(
+        "--remediation-sleep-ms",
+        type=int,
+        default=25,
+        help="Delay between backfill API calls during remediation",
+    )
+    parser.add_argument(
         "--enforce-sla",
         action="store_true",
         help="Run SLA gate (data quality + source uptime) and abort retrain on failure",
@@ -118,6 +197,7 @@ def main() -> None:
         action="store_true",
         help="Skip scorecard/model-card generation after promotion",
     )
+    parser.set_defaults(auto_remediate_data_quality=True)
     args = parser.parse_args()
 
     settings = get_settings()
@@ -150,35 +230,47 @@ def main() -> None:
         except Exception as exc:
             run_report["steps"].append({"step": "ingestion", "status": "failed", "error": str(exc)})
 
+    excluded_symbol_horizons: set[tuple[str, str]] = set()
     if args.enforce_data_quality:
         # Gate retraining when source data quality does not satisfy minimum standards.
-        quality_cmd = [
-            sys.executable,
-            "scripts/data_quality_report.py",
-            "--granularities",
-            args.quality_granularities,
-            "--max-gap-ratio",
-            str(args.quality_max_gap_ratio),
-            "--output",
-            quality_report_path,
-        ]
         symbols_for_quality = effective_symbols if effective_symbols else settings.supported_symbols
-        quality_cmd.extend(["--symbols", symbols_for_quality])
-        if args.quality_min_rows_map.strip():
-            quality_cmd.extend(["--min-rows-map", args.quality_min_rows_map.strip()])
-        if args.quality_min_coverage_ratio_map.strip():
-            quality_cmd.extend(["--min-coverage-ratio-map", args.quality_min_coverage_ratio_map.strip()])
+        selected_symbols = [item.strip().upper() for item in symbols_for_quality.split(",") if item.strip()]
+        selected_horizons = [
+            item.strip().lower()
+            for item in (effective_horizons if effective_horizons else settings.supported_horizons).split(",")
+            if item.strip()
+        ]
 
-        quality_proc = _run_command(quality_cmd)
-        quality_gate_passed = False
+        def _quality_cmd() -> list[str]:
+            cmd = [
+                sys.executable,
+                "scripts/data_quality_report.py",
+                "--granularities",
+                args.quality_granularities,
+                "--max-gap-ratio",
+                str(args.quality_max_gap_ratio),
+                "--output",
+                quality_report_path,
+                "--symbols",
+                symbols_for_quality,
+            ]
+            if args.quality_min_rows_map.strip():
+                cmd.extend(["--min-rows-map", args.quality_min_rows_map.strip()])
+            if args.quality_min_coverage_ratio_map.strip():
+                cmd.extend(["--min-coverage-ratio-map", args.quality_min_coverage_ratio_map.strip()])
+            if args.quality_max_cross_symbol_lag_steps_map.strip():
+                cmd.extend(["--max-cross-symbol-lag-steps-map", args.quality_max_cross_symbol_lag_steps_map.strip()])
+            return cmd
+
+        quality_proc = _run_command(_quality_cmd())
         quality_payload: dict[str, object] = {}
-        if quality_proc.returncode == 0:
-            quality_file = PROJECT_ROOT / quality_report_path
-            if quality_file.exists():
-                try:
-                    quality_payload = json.loads(quality_file.read_text(encoding="utf-8"))
-                except Exception:
-                    quality_payload = {}
+        quality_gate_passed = False
+        quality_file = PROJECT_ROOT / quality_report_path
+        if quality_proc.returncode == 0 and quality_file.exists():
+            try:
+                quality_payload = json.loads(quality_file.read_text(encoding="utf-8"))
+            except Exception:
+                quality_payload = {}
             quality_gate_passed = bool(quality_payload.get("gate_passed"))
 
         run_report["steps"].append(
@@ -188,27 +280,118 @@ def main() -> None:
                 "returncode": quality_proc.returncode,
                 "gate_passed": quality_gate_passed,
                 "failing_pair_count": quality_payload.get("failing_pair_count"),
+                "failing_cross_symbol_freshness_count": quality_payload.get("failing_cross_symbol_freshness_count"),
                 "stdout_tail": quality_proc.stdout[-4000:],
                 "stderr_tail": quality_proc.stderr[-4000:],
                 "quality_report": str(PROJECT_ROOT / quality_report_path),
             }
         )
 
-        if quality_proc.returncode != 0 or not quality_gate_passed:
-            output_file = output_root / f"daily_retrain_{args.model_version}.json"
-            output_file.write_text(json.dumps(run_report, indent=2), encoding="utf-8")
-            print(
-                json.dumps(
+        if (quality_proc.returncode != 0 or not quality_gate_passed) and args.auto_remediate_data_quality:
+            remediation_symbols: set[str] = set()
+            remediation_granularities: set[str] = set()
+            failing_pairs = quality_payload.get("failing_pairs", [])
+            if isinstance(failing_pairs, list):
+                for item in failing_pairs:
+                    if not isinstance(item, dict):
+                        continue
+                    symbol = str(item.get("symbol", "")).upper()
+                    granularity = str(item.get("granularity", ""))
+                    if symbol:
+                        remediation_symbols.add(symbol)
+                    if granularity:
+                        remediation_granularities.add(granularity)
+            failing_cross = quality_payload.get("failing_cross_symbol_freshness", [])
+            if isinstance(failing_cross, list):
+                for item in failing_cross:
+                    if not isinstance(item, dict):
+                        continue
+                    granularity = str(item.get("granularity", ""))
+                    if granularity:
+                        remediation_granularities.add(granularity)
+                remediation_symbols.update(selected_symbols)
+
+            if remediation_symbols and remediation_granularities:
+                remediation_output = f"{args.output_prefix}/backfill_remediation_{args.model_version}.json"
+                remediation_cmd = [
+                    sys.executable,
+                    "scripts/backfill_market_data.py",
+                    "--symbols",
+                    ",".join(sorted(remediation_symbols)),
+                    "--granularities",
+                    ",".join(sorted(remediation_granularities)),
+                    "--max-passes",
+                    str(max(int(args.remediation_max_passes), 1)),
+                    "--sleep-ms",
+                    str(max(int(args.remediation_sleep_ms), 0)),
+                    "--output",
+                    remediation_output,
+                ]
+                remediation_proc = _run_command(remediation_cmd)
+                run_report["steps"].append(
                     {
-                        "status": "failed",
-                        "reason": "data_quality_gate_failed",
-                        "report": str(output_file),
-                        "quality_report": str(PROJECT_ROOT / quality_report_path),
-                    },
-                    indent=2,
+                        "step": "data_quality_remediation_backfill",
+                        "status": "ok" if remediation_proc.returncode == 0 else "failed",
+                        "returncode": remediation_proc.returncode,
+                        "symbols": sorted(remediation_symbols),
+                        "granularities": sorted(remediation_granularities),
+                        "stdout_tail": remediation_proc.stdout[-4000:],
+                        "stderr_tail": remediation_proc.stderr[-4000:],
+                        "report": str(PROJECT_ROOT / remediation_output),
+                    }
                 )
+
+                quality_proc = _run_command(_quality_cmd())
+                quality_payload = {}
+                quality_gate_passed = False
+                if quality_proc.returncode == 0 and quality_file.exists():
+                    try:
+                        quality_payload = json.loads(quality_file.read_text(encoding="utf-8"))
+                    except Exception:
+                        quality_payload = {}
+                    quality_gate_passed = bool(quality_payload.get("gate_passed"))
+                run_report["steps"].append(
+                    {
+                        "step": "data_quality_post_remediation",
+                        "status": "ok" if (quality_proc.returncode == 0 and quality_gate_passed) else "failed",
+                        "returncode": quality_proc.returncode,
+                        "gate_passed": quality_gate_passed,
+                        "failing_pair_count": quality_payload.get("failing_pair_count"),
+                        "failing_cross_symbol_freshness_count": quality_payload.get("failing_cross_symbol_freshness_count"),
+                        "stdout_tail": quality_proc.stdout[-4000:],
+                        "stderr_tail": quality_proc.stderr[-4000:],
+                        "quality_report": str(PROJECT_ROOT / quality_report_path),
+                    }
+                )
+
+        if quality_proc.returncode != 0 or not quality_gate_passed:
+            excluded_symbol_horizons = _excluded_pairs_from_quality_report(
+                quality_payload=quality_payload,
+                symbols=selected_symbols,
+                horizons=selected_horizons,
             )
-            raise SystemExit(1)
+            run_report["steps"].append(
+                {
+                    "step": "data_quality_exclusions",
+                    "status": "ok" if excluded_symbol_horizons else "failed",
+                    "excluded_pairs": sorted([f"{symbol}:{horizon}" for symbol, horizon in excluded_symbol_horizons]),
+                }
+            )
+            if not excluded_symbol_horizons:
+                output_file = output_root / f"daily_retrain_{args.model_version}.json"
+                output_file.write_text(json.dumps(run_report, indent=2), encoding="utf-8")
+                print(
+                    json.dumps(
+                        {
+                            "status": "failed",
+                            "reason": "data_quality_gate_failed",
+                            "report": str(output_file),
+                            "quality_report": str(PROJECT_ROOT / quality_report_path),
+                        },
+                        indent=2,
+                    )
+                )
+                raise SystemExit(1)
 
     if args.enforce_sla:
         sla_cmd = [
@@ -272,6 +455,11 @@ def main() -> None:
         train_cmd.extend(["--symbols", effective_symbols])
     if effective_horizons:
         train_cmd.extend(["--horizons", effective_horizons])
+    if excluded_symbol_horizons:
+        excluded_csv = ",".join(
+            sorted([f"{symbol}:{horizon}" for symbol, horizon in excluded_symbol_horizons])
+        )
+        train_cmd.extend(["--exclude-symbol-horizons", excluded_csv])
     train_proc = _run_command(train_cmd)
     run_report["steps"].append(
         {
@@ -447,6 +635,7 @@ def main() -> None:
             "ci_gate_report": str(PROJECT_ROOT / ci_gate_report_path) if args.enforce_ci_gate else None,
             "scorecard_report": str(PROJECT_ROOT / scorecard_output_path) if not args.skip_scorecard else None,
             "model_card": str(PROJECT_ROOT / model_card_output_path) if not args.skip_scorecard else None,
+            "excluded_symbol_horizons": sorted([f"{symbol}:{horizon}" for symbol, horizon in excluded_symbol_horizons]),
         },
     )
 
@@ -469,6 +658,7 @@ def main() -> None:
                 "ingestion_enabled": settings.ingestion_enabled,
                 "effective_symbols": effective_symbols if effective_symbols else None,
                 "effective_horizons": effective_horizons if effective_horizons else None,
+                "excluded_symbol_horizons": sorted([f"{symbol}:{horizon}" for symbol, horizon in excluded_symbol_horizons]),
             },
             indent=2,
         )

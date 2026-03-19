@@ -75,6 +75,9 @@ def _summarize_pairs(pairs: list[dict[str, object]]) -> dict[str, object]:
             "avg_max_drawdown": 0.0,
             "avg_baseline_max_drawdown": 0.0,
             "avg_abstain_rate": 0.0,
+            "avg_edge_filter_take_rate": 0.0,
+            "avg_meta_ablation_execution_delta": 0.0,
+            "avg_meta_ablation_total_return_delta": 0.0,
         }
 
     gate_flags = [bool(item.get("gate_passed")) for item in pairs]
@@ -83,6 +86,9 @@ def _summarize_pairs(pairs: list[dict[str, object]]) -> dict[str, object]:
     drawdowns = [_float(item.get("max_drawdown"), 0.0) for item in pairs]
     baseline_drawdowns = [_float(item.get("baseline_max_drawdown"), 0.0) for item in pairs]
     abstain_rates = [_float(item.get("abstain_rate"), 0.0) for item in pairs]
+    edge_filter_take_rates = [_float(item.get("edge_filter_take_rate"), 0.0) for item in pairs]
+    ablation_execution_deltas = [_float(item.get("meta_ablation_execution_delta"), 0.0) for item in pairs]
+    ablation_total_return_deltas = [_float(item.get("meta_ablation_total_return_delta"), 0.0) for item in pairs]
 
     return {
         "pair_count": len(pairs),
@@ -93,6 +99,9 @@ def _summarize_pairs(pairs: list[dict[str, object]]) -> dict[str, object]:
         "avg_max_drawdown": round(float(mean(drawdowns)), 8),
         "avg_baseline_max_drawdown": round(float(mean(baseline_drawdowns)), 8),
         "avg_abstain_rate": round(float(mean(abstain_rates)), 6),
+        "avg_edge_filter_take_rate": round(float(mean(edge_filter_take_rates)), 6),
+        "avg_meta_ablation_execution_delta": round(float(mean(ablation_execution_deltas)), 8),
+        "avg_meta_ablation_total_return_delta": round(float(mean(ablation_total_return_deltas)), 8),
     }
 
 
@@ -120,7 +129,25 @@ def _pair_rows(summary_payload: dict[str, object]) -> list[dict[str, object]]:
             paper = entry.get("paper_trading_metrics", {})
             baseline_paper = entry.get("baseline_paper_trading_metrics", {})
             meta = entry.get("meta_labeling", {})
+            ablation = entry.get("ablation_metrics", {})
             take_rate = _float(meta.get("test_take_rate"), 1.0) if isinstance(meta, dict) else 1.0
+            with_meta_execution = {}
+            without_meta_execution = {}
+            with_meta_paper = {}
+            without_meta_paper = {}
+            edge_filter_take_rate = 0.0
+            if isinstance(ablation, dict):
+                with_meta = ablation.get("with_meta_abstention", {})
+                without_meta = ablation.get("without_meta_abstention", {})
+                if isinstance(with_meta, dict):
+                    with_meta_execution = with_meta.get("execution", {}) if isinstance(with_meta.get("execution"), dict) else {}
+                    with_meta_paper = with_meta.get("paper", {}) if isinstance(with_meta.get("paper"), dict) else {}
+                if isinstance(without_meta, dict):
+                    without_meta_execution = (
+                        without_meta.get("execution", {}) if isinstance(without_meta.get("execution"), dict) else {}
+                    )
+                    without_meta_paper = without_meta.get("paper", {}) if isinstance(without_meta.get("paper"), dict) else {}
+                edge_filter_take_rate = _float(ablation.get("edge_filter_take_rate"), 0.0)
             rows.append(
                 {
                     "symbol": str(symbol).upper(),
@@ -136,6 +163,15 @@ def _pair_rows(summary_payload: dict[str, object]) -> list[dict[str, object]]:
                     if isinstance(baseline_paper, dict)
                     else 0.0,
                     "abstain_rate": float(max(0.0, min(1.0, 1.0 - take_rate))),
+                    "edge_filter_take_rate": edge_filter_take_rate,
+                    "meta_ablation_execution_delta": (
+                        _float(with_meta_execution.get("net_mean_return"), 0.0)
+                        - _float(without_meta_execution.get("net_mean_return"), 0.0)
+                    ),
+                    "meta_ablation_total_return_delta": (
+                        _float(with_meta_paper.get("total_return"), 0.0)
+                        - _float(without_meta_paper.get("total_return"), 0.0)
+                    ),
                 }
             )
     return rows

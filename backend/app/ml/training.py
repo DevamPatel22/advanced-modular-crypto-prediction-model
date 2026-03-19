@@ -28,7 +28,7 @@ from sklearn.ensemble import (
     StackingRegressor,
 )
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import ElasticNet, HuberRegressor, LogisticRegression, Ridge
+from sklearn.linear_model import BayesianRidge, ElasticNet, HuberRegressor, LogisticRegression, Ridge
 from sklearn.metrics import (
     accuracy_score,
     f1_score,
@@ -48,6 +48,7 @@ from app.ml.evaluation import (
     execution_aware_metrics,
     paper_trading_metrics,
     strict_gate_walk_forward_diagnostic,
+    walk_forward_splits,
 )
 from app.ml.features import FEATURE_COLUMNS, FEATURE_VERSION, HORIZON_SPECS, HorizonSpec, build_features, feature_columns_for_horizon
 
@@ -105,6 +106,21 @@ HORIZON_DIRECTIONAL_TILT_MAX_LOG_SHIFT: dict[str, float] = {
     "1mo": 0.32,
     "3mo": 0.45,
 }
+ALPHA_SIGNAL_DIRECTIONS: dict[str, float] = {
+    # Positive value means "higher signal should align with higher future return".
+    "reversal_pressure_5": 1.0,
+    "mean_reversion_z_20": 1.0,
+    "volatility_cluster_20_60": -1.0,
+    "kalman_level_ratio": -1.0,
+    "kalman_trend_5": 1.0,
+}
+ALPHA_SIGNAL_RATIONALES: dict[str, str] = {
+    "reversal_pressure_5": "Short-horizon return shocks mean-revert under stable liquidity and bounded impact.",
+    "mean_reversion_z_20": "Large z-score displacement from local fair value tends to compress.",
+    "volatility_cluster_20_60": "Short-over-long volatility expansion flags unstable regimes with weaker carry.",
+    "kalman_level_ratio": "Deviation from state-space smoothed level indicates potential reversion pressure.",
+    "kalman_trend_5": "Persistent filtered trend can continue when flow remains one-sided.",
+}
 
 
 @dataclass(frozen=True)
@@ -129,6 +145,7 @@ class SplitData:
     regime_val: np.ndarray
     regime_test: np.ndarray
     leakage_diagnostic: dict[str, object]
+    alpha_kill_diagnostics: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -141,6 +158,7 @@ class CandidateResult:
     class_down_weight_boost: float = 1.0
     regression_target: str = "log_return"
     threshold_tuning: dict[str, object] | None = None
+    stability: dict[str, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -252,19 +270,31 @@ def _connect() -> sqlite3.Connection:
     return connection
 
 
-def load_candles(symbol: str, granularity: str) -> pd.DataFrame:
+def load_candles(symbol: str, granularity: str, as_of_start_time: int | None = None) -> pd.DataFrame:
     """Load candles."""
+    as_of = int(as_of_start_time) if isinstance(as_of_start_time, int) else None
     try:
         with _connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT start_time, open, high, low, close, volume
-                FROM candles
-                WHERE symbol = ? AND granularity = ?
-                ORDER BY start_time ASC
-                """,
-                (symbol.upper(), granularity),
-            ).fetchall()
+            if as_of is None:
+                rows = conn.execute(
+                    """
+                    SELECT start_time, open, high, low, close, volume
+                    FROM candles
+                    WHERE symbol = ? AND granularity = ?
+                    ORDER BY start_time ASC
+                    """,
+                    (symbol.upper(), granularity),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT start_time, open, high, low, close, volume
+                    FROM candles
+                    WHERE symbol = ? AND granularity = ? AND start_time <= ?
+                    ORDER BY start_time ASC
+                    """,
+                    (symbol.upper(), granularity, as_of),
+                ).fetchall()
     except sqlite3.OperationalError:
         return pd.DataFrame(columns=["start_time", "open", "high", "low", "close", "volume"])
 
@@ -298,6 +328,146 @@ def _mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """Internal helper to compute MAPE."""
     denom = np.clip(np.abs(y_true), 1e-12, None)
     return float(np.mean(np.abs((y_true - y_pred) / denom)))
+
+
+def _periods_per_year_from_horizon(horizon: str) -> float:
+    """Internal helper to map horizon label to annualization factor."""
+    value = horizon.strip().lower()
+    if value.endswith("mo") and value[:-2].isdigit():
+        months = max(int(value[:-2]), 1)
+        return 12.0 / months
+    if not value:
+        return 365.0 * 24.0
+    unit = value[-1]
+    qty_raw = value[:-1]
+    if not qty_raw.isdigit():
+        return 365.0 * 24.0
+    qty = max(int(qty_raw), 1)
+    if unit == "m":
+        return (365.0 * 24.0 * 60.0) / qty
+    if unit == "h":
+        return (365.0 * 24.0) / qty
+    if unit == "d":
+        return 365.0 / qty
+    if unit == "w":
+        return 52.0 / qty
+    return 365.0 * 24.0
+
+
+def _vol_target_position_scale(volatility_20: np.ndarray, horizon: str, target_annual_vol: float, max_leverage: float) -> np.ndarray:
+    """Compute volatility-targeted position scale."""
+    annual_target = max(float(target_annual_vol), 1e-6)
+    max_leverage = float(np.clip(max_leverage, 0.05, 5.0))
+    periods = max(_periods_per_year_from_horizon(horizon), 1.0)
+    target_step_vol = annual_target / math.sqrt(periods)
+    vol = np.asarray(volatility_20, dtype=float)
+    vol = np.nan_to_num(vol, nan=np.nanmedian(vol[np.isfinite(vol)]) if np.any(np.isfinite(vol)) else target_step_vol)
+    vol = np.clip(vol, 1e-6, 5.0)
+    scale = target_step_vol / vol
+    return np.clip(scale, 0.0, max_leverage)
+
+
+def _signal_quality_metrics(oriented_signal: np.ndarray, target_return: np.ndarray) -> tuple[float, float, float]:
+    """Compute signal-quality metrics for alpha hypothesis governance."""
+    if oriented_signal.size == 0 or target_return.size == 0 or oriented_signal.size != target_return.size:
+        return math.nan, math.nan, math.nan
+    if np.std(oriented_signal) <= 1e-12 or np.std(target_return) <= 1e-12:
+        ic = math.nan
+    else:
+        ic = float(np.corrcoef(oriented_signal, target_return)[0, 1])
+    try:
+        p90 = float(np.quantile(oriented_signal, 0.90))
+        p10 = float(np.quantile(oriented_signal, 0.10))
+        top = target_return[oriented_signal >= p90]
+        bottom = target_return[oriented_signal <= p10]
+        decile_spread_bps = float((np.mean(top) - np.mean(bottom)) * 10000.0) if len(top) and len(bottom) else math.nan
+    except Exception:
+        decile_spread_bps = math.nan
+    alignment = float(np.mean(np.sign(oriented_signal) == np.sign(target_return)))
+    return ic, decile_spread_bps, alignment
+
+
+def _alpha_kill_decisions(frame: pd.DataFrame, selected_features: list[str]) -> tuple[list[str], dict[str, object]]:
+    """Apply rolling alpha-signal kill rules and return active feature list."""
+    settings = get_settings()
+    if not bool(settings.alpha_kill_switch_enabled):
+        return list(selected_features), {"enabled": False, "reason": "alpha_kill_switch_disabled"}
+
+    alpha_features = [feature for feature in selected_features if feature in ALPHA_SIGNAL_DIRECTIONS]
+    if not alpha_features:
+        return list(selected_features), {"enabled": True, "reason": "no_alpha_features_in_selection", "rows": []}
+
+    lookback = max(int(settings.alpha_kill_lookback_rows), 120)
+    scoped = frame.tail(lookback).copy()
+    if scoped.empty:
+        return list(selected_features), {"enabled": True, "reason": "empty_scope", "rows": []}
+
+    current = np.clip(scoped["close"].to_numpy(dtype=float), 1e-12, None)
+    target = np.asarray(scoped["target_close"].to_numpy(dtype=float), dtype=float)
+    future_return = (target / current) - 1.0
+    idx = np.arange(future_return.size, dtype=int)
+    windows = np.array_split(idx, 3)
+    rows: list[dict[str, object]] = []
+    surviving: set[str] = set()
+
+    min_ic = float(settings.alpha_kill_min_ic)
+    min_spread = float(settings.alpha_kill_min_decile_spread_bps)
+    min_align = float(settings.alpha_kill_min_sign_alignment)
+    min_survival = float(np.clip(settings.alpha_kill_min_survival_ratio, 0.0, 1.0))
+
+    for feature in alpha_features:
+        direction = float(ALPHA_SIGNAL_DIRECTIONS[feature])
+        signal = np.asarray(scoped[feature].to_numpy(dtype=float), dtype=float) * direction
+        window_pass = 0
+        total_windows = 0
+        window_rows: list[dict[str, float]] = []
+        for window in windows:
+            if window.size < 25:
+                continue
+            sig_w = signal[window]
+            ret_w = future_return[window]
+            mask = np.isfinite(sig_w) & np.isfinite(ret_w)
+            if int(np.sum(mask)) < 25:
+                continue
+            total_windows += 1
+            ic, spread_bps, align = _signal_quality_metrics(sig_w[mask], ret_w[mask])
+            pass_window = (
+                (math.isfinite(ic) and ic >= min_ic)
+                and (math.isfinite(spread_bps) and spread_bps >= min_spread)
+                and (math.isfinite(align) and align >= min_align)
+            )
+            if pass_window:
+                window_pass += 1
+            window_rows.append(
+                {
+                    "window_samples": float(np.sum(mask)),
+                    "ic": ic,
+                    "decile_spread_bps": spread_bps,
+                    "sign_alignment": align,
+                    "pass": float(1.0 if pass_window else 0.0),
+                }
+            )
+
+        survival_ratio = (window_pass / total_windows) if total_windows > 0 else 0.0
+        keep = survival_ratio >= min_survival
+        if keep:
+            surviving.add(feature)
+        rows.append(
+            {
+                "feature": feature,
+                "expected_direction": "positive" if direction > 0 else "negative",
+                "rationale": ALPHA_SIGNAL_RATIONALES.get(feature, ""),
+                "window_count": float(total_windows),
+                "passed_windows": float(window_pass),
+                "survival_ratio": float(survival_ratio),
+                "min_required_survival_ratio": float(min_survival),
+                "kept": bool(keep),
+                "windows": window_rows,
+            }
+        )
+
+    active = [feature for feature in selected_features if (feature not in ALPHA_SIGNAL_DIRECTIONS) or (feature in surviving)]
+    return active, {"enabled": True, "rows": rows}
 
 
 def _split_indices(length: int) -> tuple[int, int]:
@@ -457,11 +627,19 @@ def apply_directional_tilt_to_close(
     return np.maximum(adjusted, 1e-8)
 
 
-def resolve_horizon_data(symbol: str, spec: HorizonSpec, min_samples: int | None = None) -> tuple[str, int, pd.DataFrame] | None:
+def resolve_horizon_data(
+    symbol: str,
+    spec: HorizonSpec,
+    min_samples: int | None = None,
+    as_of_cutoff_by_granularity: dict[str, int] | None = None,
+) -> tuple[str, int, pd.DataFrame] | None:
     """Resolve horizon data."""
     required = min_samples if min_samples is not None else min_samples_for_horizon(spec.label)
     for granularity, steps in spec.candidates:
-        candidate = load_candles(symbol, granularity)
+        as_of = None
+        if isinstance(as_of_cutoff_by_granularity, dict) and granularity in as_of_cutoff_by_granularity:
+            as_of = int(as_of_cutoff_by_granularity[granularity])
+        candidate = load_candles(symbol, granularity, as_of_start_time=as_of)
         if len(candidate) >= (required + steps + LOOKBACK_BUFFER):
             return granularity, steps, candidate
     return None
@@ -494,6 +672,10 @@ def _prepare_supervised(df: pd.DataFrame, horizon: str, steps_ahead: int, min_sa
     if len(enriched) < min_samples:
         return None
 
+    active_features, alpha_kill_diagnostics = _alpha_kill_decisions(enriched, selected_features)
+    if not active_features:
+        return None
+
     train_end, val_end = _split_indices(len(enriched))
     # Purged splits reduce leakage from overlapping forecast windows across boundaries.
     train_df, val_df, test_df = _purged_split_frames(
@@ -517,10 +699,10 @@ def _prepare_supervised(df: pd.DataFrame, horizon: str, steps_ahead: int, min_sa
         return None
 
     split = SplitData(
-        feature_columns=selected_features,
-        x_train=train_df[selected_features],
-        x_val=val_df[selected_features],
-        x_test=test_df[selected_features],
+        feature_columns=active_features,
+        x_train=train_df[active_features],
+        x_val=val_df[active_features],
+        x_test=test_df[active_features],
         y_train_cls=train_df["target_up"],
         y_val_cls=val_df["target_up"],
         y_test_cls=test_df["target_up"].to_numpy(dtype=int),
@@ -537,179 +719,192 @@ def _prepare_supervised(df: pd.DataFrame, horizon: str, steps_ahead: int, min_sa
         regime_val=np.argmax(val_df[["markov_prob_down", "markov_prob_flat", "markov_prob_up"]].to_numpy(dtype=float), axis=1),
         regime_test=np.argmax(test_df[["markov_prob_down", "markov_prob_flat", "markov_prob_up"]].to_numpy(dtype=float), axis=1),
         leakage_diagnostic=leakage_diagnostic,
+        alpha_kill_diagnostics=alpha_kill_diagnostics,
     )
     return enriched, split
 
 
-def _classification_candidates() -> list[tuple[str, Pipeline]]:
-    """Internal helper to compute classification candidates."""
-    base: list[tuple[str, Pipeline]] = [
-        (
-            "logistic_regression",
-            Pipeline(
-                steps=[
-                    ("imputer", SimpleImputer(strategy="median")),
-                    ("scaler", StandardScaler()),
-                    ("model", LogisticRegression(max_iter=1500, class_weight="balanced", random_state=42)),
-                ]
-            ),
-        ),
-        (
-            "random_forest_classifier",
-            Pipeline(
-                steps=[
-                    ("imputer", SimpleImputer(strategy="median")),
-                    (
-                        "model",
-                        RandomForestClassifier(
-                            n_estimators=320,
-                            max_depth=10,
-                            min_samples_leaf=4,
-                            class_weight="balanced_subsample",
-                            random_state=42,
-                            n_jobs=-1,
-                        ),
-                    ),
-                ]
-            ),
-        ),
-        (
-            "extra_trees_classifier",
-            Pipeline(
-                steps=[
-                    ("imputer", SimpleImputer(strategy="median")),
-                    (
-                        "model",
-                        ExtraTreesClassifier(
-                            n_estimators=400,
-                            max_depth=12,
-                            min_samples_leaf=3,
-                            class_weight="balanced_subsample",
-                            random_state=42,
-                            n_jobs=-1,
-                        ),
-                    ),
-                ]
-            ),
-        ),
-        (
-            "gradient_boosting_classifier",
-            Pipeline(
-                steps=[
-                    ("imputer", SimpleImputer(strategy="median")),
-                    (
-                        "model",
-                        GradientBoostingClassifier(
-                            n_estimators=180,
-                            learning_rate=0.05,
-                            max_depth=3,
-                            random_state=42,
-                        ),
-                    ),
-                ]
-            ),
-        ),
-        (
-            "hist_gradient_boosting_classifier",
-            Pipeline(
-                steps=[
-                    ("imputer", SimpleImputer(strategy="median")),
-                    (
-                        "model",
-                        HistGradientBoostingClassifier(
-                            max_iter=300,
-                            learning_rate=0.045,
-                            max_depth=6,
-                            min_samples_leaf=10,
-                            random_state=42,
-                        ),
-                    ),
-                ]
-            ),
-        ),
-    ]
-    if XGBClassifier is not None:
-        base.append(
-            (
-                "xgboost_classifier",
-                Pipeline(
-                    steps=[
-                        ("imputer", SimpleImputer(strategy="median")),
-                        (
-                            "model",
-                            XGBClassifier(
-                                n_estimators=220,
-                                learning_rate=0.05,
-                                max_depth=5,
-                                subsample=0.9,
-                                colsample_bytree=0.9,
-                                objective="binary:logistic",
-                                eval_metric="logloss",
-                                random_state=42,
-                                n_jobs=1,
-                            ),
-                        ),
-                    ]
-                ),
-            )
-        )
-    if LGBMClassifier is not None:
-        base.append(
-            (
-                "lightgbm_classifier",
-                Pipeline(
-                    steps=[
-                        ("imputer", SimpleImputer(strategy="median")),
-                        (
-                            "model",
-                            LGBMClassifier(
-                                n_estimators=260,
-                                learning_rate=0.04,
-                                max_depth=7,
-                                random_state=42,
-                                n_jobs=1,
-                                verbosity=-1,
-                            ),
-                        ),
-                    ]
-                ),
-            )
-        )
-    if CatBoostClassifier is not None:
-        base.append(
-            (
-                "catboost_classifier",
-                Pipeline(
-                    steps=[
-                        ("imputer", SimpleImputer(strategy="median")),
-                        (
-                            "model",
-                            CatBoostClassifier(
-                                iterations=220,
-                                learning_rate=0.05,
-                                depth=6,
-                                loss_function="Logloss",
-                                verbose=False,
-                                random_seed=42,
-                            ),
-                        ),
-                    ]
-                ),
-            )
-        )
+def _classification_candidates(horizon: str) -> list[tuple[str, Pipeline]]:
+    """Build classification candidates with theory-driven defaults."""
+    settings = get_settings()
+    mode = settings.model_candidate_mode.strip().lower()
+    theory_mode = mode in {"theory", "theory_driven", "theory-driven"}
 
-    base_estimators = [
-        ("lr", base[0][1]),
-        ("rf", base[1][1]),
-        ("et", base[2][1]),
-        ("gb", base[3][1]),
-    ]
+    logistic = (
+        "logistic_regression",
+        Pipeline(
+            steps=[
+                ("imputer", SimpleImputer(strategy="median")),
+                ("scaler", StandardScaler()),
+                ("model", LogisticRegression(max_iter=1500, class_weight="balanced", random_state=42)),
+            ]
+        ),
+    )
+    hist_gb = (
+        "hist_gradient_boosting_classifier",
+        Pipeline(
+            steps=[
+                ("imputer", SimpleImputer(strategy="median")),
+                (
+                    "model",
+                    HistGradientBoostingClassifier(
+                        max_iter=300,
+                        learning_rate=0.045,
+                        max_depth=6,
+                        min_samples_leaf=10,
+                        random_state=42,
+                    ),
+                ),
+            ]
+        ),
+    )
+    gradient = (
+        "gradient_boosting_classifier",
+        Pipeline(
+            steps=[
+                ("imputer", SimpleImputer(strategy="median")),
+                (
+                    "model",
+                    GradientBoostingClassifier(
+                        n_estimators=180,
+                        learning_rate=0.05,
+                        max_depth=3,
+                        random_state=42,
+                    ),
+                ),
+            ]
+        ),
+    )
+
+    if theory_mode:
+        base: list[tuple[str, Pipeline]] = [logistic, hist_gb]
+        if horizon in {"5m", "1h", "3h"}:
+            base.append(gradient)
+    else:
+        base = [
+            logistic,
+            (
+                "random_forest_classifier",
+                Pipeline(
+                    steps=[
+                        ("imputer", SimpleImputer(strategy="median")),
+                        (
+                            "model",
+                            RandomForestClassifier(
+                                n_estimators=320,
+                                max_depth=10,
+                                min_samples_leaf=4,
+                                class_weight="balanced_subsample",
+                                random_state=42,
+                                n_jobs=-1,
+                            ),
+                        ),
+                    ]
+                ),
+            ),
+            (
+                "extra_trees_classifier",
+                Pipeline(
+                    steps=[
+                        ("imputer", SimpleImputer(strategy="median")),
+                        (
+                            "model",
+                            ExtraTreesClassifier(
+                                n_estimators=400,
+                                max_depth=12,
+                                min_samples_leaf=3,
+                                class_weight="balanced_subsample",
+                                random_state=42,
+                                n_jobs=-1,
+                            ),
+                        ),
+                    ]
+                ),
+            ),
+            gradient,
+            hist_gb,
+        ]
+        if XGBClassifier is not None:
+            base.append(
+                (
+                    "xgboost_classifier",
+                    Pipeline(
+                        steps=[
+                            ("imputer", SimpleImputer(strategy="median")),
+                            (
+                                "model",
+                                XGBClassifier(
+                                    n_estimators=220,
+                                    learning_rate=0.05,
+                                    max_depth=5,
+                                    subsample=0.9,
+                                    colsample_bytree=0.9,
+                                    objective="binary:logistic",
+                                    eval_metric="logloss",
+                                    random_state=42,
+                                    n_jobs=1,
+                                ),
+                            ),
+                        ]
+                    ),
+                )
+            )
+        if LGBMClassifier is not None:
+            base.append(
+                (
+                    "lightgbm_classifier",
+                    Pipeline(
+                        steps=[
+                            ("imputer", SimpleImputer(strategy="median")),
+                            (
+                                "model",
+                                LGBMClassifier(
+                                    n_estimators=260,
+                                    learning_rate=0.04,
+                                    max_depth=7,
+                                    random_state=42,
+                                    n_jobs=1,
+                                    verbosity=-1,
+                                ),
+                            ),
+                        ]
+                    ),
+                )
+            )
+        if CatBoostClassifier is not None:
+            base.append(
+                (
+                    "catboost_classifier",
+                    Pipeline(
+                        steps=[
+                            ("imputer", SimpleImputer(strategy="median")),
+                            (
+                                "model",
+                                CatBoostClassifier(
+                                    iterations=220,
+                                    learning_rate=0.05,
+                                    depth=6,
+                                    loss_function="Logloss",
+                                    verbose=False,
+                                    random_seed=42,
+                                ),
+                            ),
+                        ]
+                    ),
+                )
+            )
+
+    if not bool(settings.model_enable_ensemble_challenger) or len(base) < 2:
+        return base
+
+    # Ensemble is a challenger; it is not mandatory for theory-mode training.
+    stack_estimators = [(f"m{idx}", model) for idx, (_name, model) in enumerate(base[: min(len(base), 4)], start=1)]
     stacking = Pipeline(
         steps=[
             (
                 "model",
                 StackingClassifier(
-                    estimators=base_estimators,
+                    estimators=stack_estimators,
                     final_estimator=LogisticRegression(max_iter=1200, class_weight="balanced", random_state=42),
                     stack_method="predict_proba",
                     passthrough=False,
@@ -718,195 +913,244 @@ def _classification_candidates() -> list[tuple[str, Pipeline]]:
             )
         ]
     )
-    return base + [("stacking_classifier", stacking)]
+    return base + [("stacking_classifier_challenger", stacking)]
 
 
-def _regression_candidates() -> list[tuple[str, Pipeline]]:
-    """Internal helper to compute regression candidates."""
-    base: list[tuple[str, Pipeline]] = [
-        (
-            "random_forest_regressor",
-            Pipeline(
-                steps=[
-                    ("imputer", SimpleImputer(strategy="median")),
-                    (
-                        "model",
-                        RandomForestRegressor(
-                            n_estimators=250,
-                            max_depth=12,
-                            min_samples_leaf=4,
-                            random_state=42,
-                            n_jobs=-1,
-                        ),
+def _regression_candidates(horizon: str) -> list[tuple[str, Pipeline]]:
+    """Build regression candidates with theory-driven defaults."""
+    settings = get_settings()
+    mode = settings.model_candidate_mode.strip().lower()
+    theory_mode = mode in {"theory", "theory_driven", "theory-driven"}
+
+    bayesian_arx = (
+        "bayesian_ridge_arx_regressor",
+        Pipeline(
+            steps=[
+                ("imputer", SimpleImputer(strategy="median")),
+                ("scaler", StandardScaler()),
+                (
+                    "model",
+                    BayesianRidge(
+                        alpha_1=1e-6,
+                        alpha_2=1e-6,
+                        lambda_1=1e-6,
+                        lambda_2=1e-6,
+                        compute_score=False,
                     ),
-                ]
-            ),
+                ),
+            ]
         ),
-        (
-            "gradient_boosting_regressor",
-            Pipeline(
-                steps=[
-                    ("imputer", SimpleImputer(strategy="median")),
-                    (
-                        "model",
-                        GradientBoostingRegressor(
-                            n_estimators=200,
-                            learning_rate=0.05,
-                            max_depth=3,
-                            random_state=42,
-                        ),
+    )
+    ridge = (
+        "ridge_regressor",
+        Pipeline(
+            steps=[
+                ("imputer", SimpleImputer(strategy="median")),
+                ("scaler", StandardScaler()),
+                ("model", Ridge(alpha=1.2, random_state=42)),
+            ]
+        ),
+    )
+    huber = (
+        "huber_regressor",
+        Pipeline(
+            steps=[
+                ("imputer", SimpleImputer(strategy="median")),
+                ("scaler", StandardScaler()),
+                ("model", HuberRegressor(epsilon=1.35, alpha=0.0001, max_iter=500)),
+            ]
+        ),
+    )
+    hist_gb = (
+        "hist_gradient_boosting_regressor",
+        Pipeline(
+            steps=[
+                ("imputer", SimpleImputer(strategy="median")),
+                (
+                    "model",
+                    HistGradientBoostingRegressor(
+                        max_iter=350,
+                        learning_rate=0.04,
+                        max_depth=6,
+                        min_samples_leaf=8,
+                        random_state=42,
                     ),
-                ]
-            ),
+                ),
+            ]
         ),
-        (
-            "hist_gradient_boosting_regressor",
-            Pipeline(
-                steps=[
-                    ("imputer", SimpleImputer(strategy="median")),
-                    (
-                        "model",
-                        HistGradientBoostingRegressor(
-                            max_iter=350,
-                            learning_rate=0.04,
-                            max_depth=6,
-                            min_samples_leaf=8,
-                            random_state=42,
-                        ),
+    )
+
+    if theory_mode:
+        base: list[tuple[str, Pipeline]] = [bayesian_arx, ridge, huber, hist_gb]
+        if horizon in {"1d", "1w", "1mo", "3mo"}:
+            base.append(
+                (
+                    "gradient_boosting_regressor",
+                    Pipeline(
+                        steps=[
+                            ("imputer", SimpleImputer(strategy="median")),
+                            (
+                                "model",
+                                GradientBoostingRegressor(
+                                    n_estimators=200,
+                                    learning_rate=0.05,
+                                    max_depth=3,
+                                    random_state=42,
+                                ),
+                            ),
+                        ]
                     ),
-                ]
-            ),
-        ),
-        (
-            "extra_trees_regressor",
-            Pipeline(
-                steps=[
-                    ("imputer", SimpleImputer(strategy="median")),
-                    (
-                        "model",
-                        ExtraTreesRegressor(
-                            n_estimators=350,
-                            max_depth=14,
-                            min_samples_leaf=3,
-                            random_state=42,
-                            n_jobs=-1,
-                        ),
-                    ),
-                ]
-            ),
-        ),
-        (
-            "ridge_regressor",
-            Pipeline(
-                steps=[
-                    ("imputer", SimpleImputer(strategy="median")),
-                    ("scaler", StandardScaler()),
-                    ("model", Ridge(alpha=1.2, random_state=42)),
-                ]
-            ),
-        ),
-        (
-            "elastic_net_regressor",
-            Pipeline(
-                steps=[
-                    ("imputer", SimpleImputer(strategy="median")),
-                    ("scaler", StandardScaler()),
-                    ("model", ElasticNet(alpha=0.0015, l1_ratio=0.2, random_state=42, max_iter=4000)),
-                ]
-            ),
-        ),
-        (
-            "huber_regressor",
-            Pipeline(
-                steps=[
-                    ("imputer", SimpleImputer(strategy="median")),
-                    ("scaler", StandardScaler()),
-                    ("model", HuberRegressor(epsilon=1.35, alpha=0.0001, max_iter=500)),
-                ]
-            ),
-        ),
-    ]
-    if XGBRegressor is not None:
-        base.append(
+                )
+            )
+    else:
+        base = [
             (
-                "xgboost_regressor",
+                "random_forest_regressor",
                 Pipeline(
                     steps=[
                         ("imputer", SimpleImputer(strategy="median")),
                         (
                             "model",
-                            XGBRegressor(
-                                n_estimators=260,
-                                learning_rate=0.04,
-                                max_depth=6,
-                                subsample=0.9,
-                                colsample_bytree=0.9,
-                                objective="reg:squarederror",
+                            RandomForestRegressor(
+                                n_estimators=250,
+                                max_depth=12,
+                                min_samples_leaf=4,
                                 random_state=42,
-                                n_jobs=1,
+                                n_jobs=-1,
                             ),
                         ),
                     ]
                 ),
-            )
-        )
-    if LGBMRegressor is not None:
-        base.append(
+            ),
             (
-                "lightgbm_regressor",
+                "gradient_boosting_regressor",
                 Pipeline(
                     steps=[
                         ("imputer", SimpleImputer(strategy="median")),
                         (
                             "model",
-                            LGBMRegressor(
-                                n_estimators=320,
-                                learning_rate=0.035,
-                                max_depth=8,
+                            GradientBoostingRegressor(
+                                n_estimators=200,
+                                learning_rate=0.05,
+                                max_depth=3,
                                 random_state=42,
-                                n_jobs=1,
-                                verbosity=-1,
                             ),
                         ),
                     ]
                 ),
-            )
-        )
-    if CatBoostRegressor is not None:
-        base.append(
+            ),
+            hist_gb,
             (
-                "catboost_regressor",
+                "extra_trees_regressor",
                 Pipeline(
                     steps=[
                         ("imputer", SimpleImputer(strategy="median")),
                         (
                             "model",
-                            CatBoostRegressor(
-                                iterations=260,
-                                learning_rate=0.04,
-                                depth=7,
-                                loss_function="RMSE",
-                                verbose=False,
-                                random_seed=42,
+                            ExtraTreesRegressor(
+                                n_estimators=350,
+                                max_depth=14,
+                                min_samples_leaf=3,
+                                random_state=42,
+                                n_jobs=-1,
                             ),
                         ),
                     ]
                 ),
+            ),
+            ridge,
+            (
+                "elastic_net_regressor",
+                Pipeline(
+                    steps=[
+                        ("imputer", SimpleImputer(strategy="median")),
+                        ("scaler", StandardScaler()),
+                        ("model", ElasticNet(alpha=0.0015, l1_ratio=0.2, random_state=42, max_iter=4000)),
+                    ]
+                ),
+            ),
+            huber,
+            bayesian_arx,
+        ]
+        if XGBRegressor is not None:
+            base.append(
+                (
+                    "xgboost_regressor",
+                    Pipeline(
+                        steps=[
+                            ("imputer", SimpleImputer(strategy="median")),
+                            (
+                                "model",
+                                XGBRegressor(
+                                    n_estimators=260,
+                                    learning_rate=0.04,
+                                    max_depth=6,
+                                    subsample=0.9,
+                                    colsample_bytree=0.9,
+                                    objective="reg:squarederror",
+                                    random_state=42,
+                                    n_jobs=1,
+                                ),
+                            ),
+                        ]
+                    ),
+                )
             )
-        )
+        if LGBMRegressor is not None:
+            base.append(
+                (
+                    "lightgbm_regressor",
+                    Pipeline(
+                        steps=[
+                            ("imputer", SimpleImputer(strategy="median")),
+                            (
+                                "model",
+                                LGBMRegressor(
+                                    n_estimators=320,
+                                    learning_rate=0.035,
+                                    max_depth=8,
+                                    random_state=42,
+                                    n_jobs=1,
+                                    verbosity=-1,
+                                ),
+                            ),
+                        ]
+                    ),
+                )
+            )
+        if CatBoostRegressor is not None:
+            base.append(
+                (
+                    "catboost_regressor",
+                    Pipeline(
+                        steps=[
+                            ("imputer", SimpleImputer(strategy="median")),
+                            (
+                                "model",
+                                CatBoostRegressor(
+                                    iterations=260,
+                                    learning_rate=0.04,
+                                    depth=7,
+                                    loss_function="RMSE",
+                                    verbose=False,
+                                    random_seed=42,
+                                ),
+                            ),
+                        ]
+                    ),
+                )
+            )
 
-    base_estimators = [
-        ("rf", base[0][1]),
-        ("gbr", base[1][1]),
-        ("hgb", base[2][1]),
-        ("etr", base[3][1]),
-    ]
+    if not bool(settings.model_enable_ensemble_challenger) or len(base) < 2:
+        return base
+
+    stack_estimators = [(f"m{idx}", model) for idx, (_name, model) in enumerate(base[: min(len(base), 4)], start=1)]
     stacking = Pipeline(
         steps=[
             (
                 "model",
                 StackingRegressor(
-                    estimators=base_estimators,
+                    estimators=stack_estimators,
                     final_estimator=GradientBoostingRegressor(
                         n_estimators=180,
                         learning_rate=0.05,
@@ -919,7 +1163,7 @@ def _regression_candidates() -> list[tuple[str, Pipeline]]:
             )
         ]
     )
-    return base + [("stacking_regressor", stacking)]
+    return base + [("stacking_regressor_challenger", stacking)]
 
 
 def _class_balance_sample_weight(y: pd.Series, down_weight_boost: float = 1.0) -> np.ndarray:
@@ -1019,7 +1263,30 @@ def _best_threshold_for_f1(y_true: np.ndarray, y_prob: np.ndarray) -> tuple[floa
     return best[0], best[1], best[2], {"mode": "grid_search"}
 
 
-def _select_best_classifier(split: SplitData) -> CandidateResult:
+def _classifier_stability_penalty(split: SplitData, y_val_pred: np.ndarray, tuning_payload: dict[str, object]) -> tuple[float, dict[str, float]]:
+    """Compute validation stability penalty for classifier selection."""
+    y_true = np.asarray(split.y_val_cls.to_numpy(dtype=int), dtype=int)
+    regime_ids = np.asarray(split.regime_val, dtype=int)
+    regime_f1_rows: list[float] = []
+    for regime_id in [0, 1, 2]:
+        mask = regime_ids == regime_id
+        if int(np.sum(mask)) < 20:
+            continue
+        regime_f1_rows.append(float(f1_score(y_true[mask], y_val_pred[mask], zero_division=0)))
+    regime_std = float(np.std(regime_f1_rows)) if regime_f1_rows else 0.0
+
+    fold_f1_delta_std = 0.0
+    if isinstance(tuning_payload, dict):
+        folds = tuning_payload.get("folds", [])
+        if isinstance(folds, list) and folds:
+            f1_deltas = [float(item.get("f1_delta", 0.0)) for item in folds if isinstance(item, dict)]
+            if f1_deltas:
+                fold_f1_delta_std = float(np.std(f1_deltas))
+    penalty = (0.30 * regime_std) + (0.15 * fold_f1_delta_std)
+    return penalty, {"regime_f1_std": regime_std, "walk_forward_f1_delta_std": fold_f1_delta_std}
+
+
+def _select_best_classifier(split: SplitData, horizon: str) -> CandidateResult:
     """Select best classifier. Internal helper."""
     best: CandidateResult | None = None
     val_candidates: list[ClassifierValidationCandidate] = []
@@ -1030,15 +1297,17 @@ def _select_best_classifier(split: SplitData) -> CandidateResult:
     # Search both model family and class-imbalance weighting to optimize strict gate margins.
     for down_weight_boost in _down_weight_boost_candidates(split.y_train_cls):
         sample_weight = _class_balance_sample_weight(split.y_train_cls, down_weight_boost=down_weight_boost)
-        for model_name, model in _classification_candidates():
+        for model_name, model in _classification_candidates(horizon):
             candidate_model = clone(model)
             _fit_pipeline_with_optional_weight(candidate_model, split.x_train, split.y_train_cls, sample_weight)
             val_prob = candidate_model.predict_proba(split.x_val)[:, 1]
             threshold, score_f1, score_acc, tuning_payload = _best_threshold_for_f1(val_true, val_prob)
             delta_f1 = score_f1 - val_baseline_f1
             delta_acc = score_acc - val_baseline_accuracy
+            val_pred = (val_prob >= threshold).astype(int)
+            stability_penalty, stability_payload = _classifier_stability_penalty(split, val_pred, tuning_payload)
             # Rank by gate-oriented validation margins rather than raw F1 alone.
-            score = min(delta_f1, delta_acc) + (0.45 * delta_f1) + (0.25 * delta_acc)
+            score = min(delta_f1, delta_acc) + (0.45 * delta_f1) + (0.25 * delta_acc) - stability_penalty
             val_candidates.append(
                 ClassifierValidationCandidate(
                     model_name=model_name,
@@ -1059,6 +1328,7 @@ def _select_best_classifier(split: SplitData) -> CandidateResult:
                     decision_threshold=threshold,
                     class_down_weight_boost=float(down_weight_boost),
                     threshold_tuning=tuning_payload,
+                    stability=stability_payload,
                 )
 
     if val_candidates:
@@ -1074,7 +1344,9 @@ def _select_best_classifier(split: SplitData) -> CandidateResult:
                     threshold, score_f1, score_acc, tuning_payload = _best_threshold_for_f1(val_true, blended_prob)
                     delta_f1 = score_f1 - val_baseline_f1
                     delta_acc = score_acc - val_baseline_accuracy
-                    score = min(delta_f1, delta_acc) + (0.45 * delta_f1) + (0.25 * delta_acc)
+                    blended_pred = (blended_prob >= threshold).astype(int)
+                    stability_penalty, stability_payload = _classifier_stability_penalty(split, blended_pred, tuning_payload)
+                    score = min(delta_f1, delta_acc) + (0.45 * delta_f1) + (0.25 * delta_acc) - stability_penalty
                     if best is None or score > best.val_score:
                         best = CandidateResult(
                             model_name=f"blend_{cand_a.model_name}_{cand_b.model_name}_{w_a:.2f}",
@@ -1086,6 +1358,7 @@ def _select_best_classifier(split: SplitData) -> CandidateResult:
                             decision_threshold=threshold,
                             class_down_weight_boost=float((w_a * cand_a.down_weight_boost) + (w_b * cand_b.down_weight_boost)),
                             threshold_tuning=tuning_payload,
+                            stability=stability_payload,
                         )
     if best is None:
         raise RuntimeError("No classification candidate available")
@@ -1197,6 +1470,29 @@ def _best_directional_tilt_gamma(
     return best_gamma, best_rmse
 
 
+def _regression_stability_payload(y_true: np.ndarray, y_pred: np.ndarray, y_baseline: np.ndarray) -> dict[str, float]:
+    """Compute walk-forward stability diagnostics for regression candidates."""
+    if y_true.size == 0 or y_true.size != y_pred.size or y_true.size != y_baseline.size:
+        return {"median_rmse_delta": 0.0, "rmse_delta_std": 0.0}
+    splits = walk_forward_splits(n_samples=len(y_true), folds=4, min_train_fraction=0.5, min_test_size=24)
+    if not splits:
+        return {"median_rmse_delta": 0.0, "rmse_delta_std": 0.0}
+    deltas: list[float] = []
+    for _train_start, _train_end, test_start, test_end in splits:
+        y_fold = y_true[test_start:test_end]
+        pred_fold = y_pred[test_start:test_end]
+        base_fold = y_baseline[test_start:test_end]
+        rmse_model = float(math.sqrt(mean_squared_error(y_fold, pred_fold)))
+        rmse_base = float(math.sqrt(mean_squared_error(y_fold, base_fold)))
+        deltas.append(rmse_base - rmse_model)
+    if not deltas:
+        return {"median_rmse_delta": 0.0, "rmse_delta_std": 0.0}
+    return {
+        "median_rmse_delta": float(np.median(deltas)),
+        "rmse_delta_std": float(np.std(deltas)),
+    }
+
+
 def _select_best_regressor(split: SplitData, horizon: str) -> CandidateResult:
     """Select best regressor. Internal helper."""
     best: CandidateResult | None = None
@@ -1207,7 +1503,7 @@ def _select_best_regressor(split: SplitData, horizon: str) -> CandidateResult:
 
     # Evaluate each regressor under both target formulations:
     # 1) horizon log-return, 2) residual from persistence baseline.
-    for model_name, model in _regression_candidates():
+    for model_name, model in _regression_candidates(horizon):
         for weight_mode, sample_weight in fit_weight_modes:
             tuned_name = model_name if weight_mode == "uniform" else f"{model_name}_{weight_mode}"
             log_model = clone(model)
@@ -1256,7 +1552,22 @@ def _select_best_regressor(split: SplitData, horizon: str) -> CandidateResult:
                 candidate_rmse = rmse_log
                 candidate_target = "log_return"
 
-            score = -candidate_rmse
+            val_pred_close_for_stability = (
+                (candidate_alpha * val_pred_close_residual) + ((1.0 - candidate_alpha) * split.current_close_val)
+                if candidate_target == "residual_from_persistence"
+                else (candidate_alpha * val_pred_close_model) + ((1.0 - candidate_alpha) * split.current_close_val)
+            )
+            stability = _regression_stability_payload(
+                y_true=np.asarray(split.target_close_val, dtype=float),
+                y_pred=np.asarray(val_pred_close_for_stability, dtype=float),
+                y_baseline=np.asarray(split.current_close_val, dtype=float),
+            )
+            rmse_margin = float(
+                math.sqrt(mean_squared_error(split.target_close_val, split.current_close_val))
+            ) - float(candidate_rmse)
+            score = rmse_margin + (0.20 * float(stability.get("median_rmse_delta", 0.0))) - (
+                0.12 * float(stability.get("rmse_delta_std", 0.0))
+            )
             if best is None or score > best.val_score:
                 best = CandidateResult(
                     model_name=tuned_name,
@@ -1264,6 +1575,7 @@ def _select_best_regressor(split: SplitData, horizon: str) -> CandidateResult:
                     val_score=score,
                     regression_blend_alpha=candidate_alpha,
                     regression_target=candidate_target,
+                    stability=stability,
                 )
     if best is None:
         raise RuntimeError("No regression candidate available")
@@ -1425,6 +1737,64 @@ def _near_pass_delta(metrics: dict[str, float], baseline: dict[str, float]) -> d
     }
 
 
+def _alpha_signal_diagnostics(split: SplitData) -> dict[str, object]:
+    """Compute out-of-sample diagnostics for explicit alpha hypotheses."""
+    if split.x_test.empty:
+        return {"available": False, "reason": "empty_test_set"}
+
+    current = np.clip(np.asarray(split.current_close_test, dtype=float), 1e-12, None)
+    future_return = (np.asarray(split.target_close_test, dtype=float) / current) - 1.0
+    if future_return.size == 0:
+        return {"available": False, "reason": "empty_future_return"}
+
+    signal_rows: list[dict[str, object]] = []
+    for signal, direction in ALPHA_SIGNAL_DIRECTIONS.items():
+        if signal not in split.x_test.columns:
+            continue
+        raw_signal = np.asarray(split.x_test[signal].to_numpy(dtype=float), dtype=float)
+        mask = np.isfinite(raw_signal) & np.isfinite(future_return)
+        if int(np.sum(mask)) < 25:
+            continue
+        oriented_signal = raw_signal[mask] * float(direction)
+        target = future_return[mask]
+        if np.std(oriented_signal) <= 1e-12 or np.std(target) <= 1e-12:
+            corr = math.nan
+        else:
+            corr = float(np.corrcoef(oriented_signal, target)[0, 1])
+        try:
+            p90 = float(np.quantile(oriented_signal, 0.90))
+            p10 = float(np.quantile(oriented_signal, 0.10))
+            top = target[oriented_signal >= p90]
+            bottom = target[oriented_signal <= p10]
+            decile_spread_bps = float((np.mean(top) - np.mean(bottom)) * 10000.0) if len(top) and len(bottom) else math.nan
+        except Exception:
+            decile_spread_bps = math.nan
+
+        alignment = float(np.mean(np.sign(oriented_signal) == np.sign(target)))
+        signal_rows.append(
+            {
+                "signal": signal,
+                "expected_direction": "positive" if direction > 0 else "negative",
+                "rationale": ALPHA_SIGNAL_RATIONALES.get(signal, ""),
+                "sample_count": int(np.sum(mask)),
+                "information_coefficient": corr,
+                "decile_spread_bps": decile_spread_bps,
+                "sign_alignment": alignment,
+            }
+        )
+
+    if not signal_rows:
+        return {"available": False, "reason": "no_alpha_signals_available"}
+    avg_alignment = float(np.mean([float(row["sign_alignment"]) for row in signal_rows]))
+    return {
+        "available": True,
+        "future_return_mean": float(np.mean(future_return)),
+        "future_return_std": float(np.std(future_return)),
+        "average_signal_alignment": avg_alignment,
+        "signals": signal_rows,
+    }
+
+
 def _train_regime_models(split: SplitData, horizon: str) -> tuple[dict[str, Pipeline], dict[str, Pipeline]]:
     """Train regime models. Internal helper."""
     cls_models: dict[str, Pipeline] = {}
@@ -1461,7 +1831,9 @@ def _train_regime_models(split: SplitData, horizon: str) -> tuple[dict[str, Pipe
                 regime_val=split.regime_val,
                 regime_test=split.regime_test,
                 leakage_diagnostic=split.leakage_diagnostic,
-            )
+                alpha_kill_diagnostics=split.alpha_kill_diagnostics,
+            ),
+            horizon,
         )
         reg_best = _select_best_regressor(
             SplitData(
@@ -1485,6 +1857,7 @@ def _train_regime_models(split: SplitData, horizon: str) -> tuple[dict[str, Pipe
                 regime_val=split.regime_val,
                 regime_test=split.regime_test,
                 leakage_diagnostic=split.leakage_diagnostic,
+                alpha_kill_diagnostics=split.alpha_kill_diagnostics,
             ),
             horizon,
         )
@@ -1760,10 +2133,122 @@ def _conformal_quantile(
     return max(q_abs, 0.0), float(np.clip(coverage, 0.0, 1.0))
 
 
-def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, models_root: Path, write_artifacts: bool = True) -> dict[str, object]:
+def _edge_action_mask(
+    *,
+    cls_prob: np.ndarray,
+    predicted_close: np.ndarray,
+    current_close: np.ndarray,
+    conformal_q_abs_usd: float,
+    fee_bps: float,
+    slippage_bps: float,
+    uncertainty_buffer_mult: float,
+) -> np.ndarray:
+    """Compute action mask from cost-adjusted expected edge."""
+    prob = np.asarray(cls_prob, dtype=float)
+    pred_close = np.asarray(predicted_close, dtype=float)
+    current = np.clip(np.asarray(current_close, dtype=float), 1e-12, None)
+    pred_return_abs = np.abs((pred_close / current) - 1.0)
+    confidence_edge = np.clip(np.abs(prob - 0.5) * 2.0, 0.0, 1.0)
+    expected_edge = pred_return_abs * confidence_edge
+    per_step_cost = (float(fee_bps) + float(slippage_bps)) / 10000.0
+    uncertainty = (float(conformal_q_abs_usd) / current) * float(max(uncertainty_buffer_mult, 0.0))
+    threshold = per_step_cost + uncertainty
+    return expected_edge > threshold
+
+
+def _baseline_strategy_book(split: SplitData, horizon: str) -> dict[str, dict[str, dict[str, float] | np.ndarray]]:
+    """Evaluate stronger financial baselines and return metrics per strategy."""
+    settings = get_settings()
+    vol = _frame_column(split.x_test, "volatility_20", default=0.0)
+    vol_scale = _vol_target_position_scale(
+        vol,
+        horizon=horizon,
+        target_annual_vol=float(settings.position_target_annual_vol),
+        max_leverage=float(settings.position_max_leverage),
+    )
+    ret_1 = _frame_column(split.x_test, "ret_1", default=0.0)
+    kalman_trend = _frame_column(split.x_test, "kalman_trend_5", default=0.0)
+    signals: dict[str, np.ndarray] = {
+        "always_long": np.ones(len(split.x_test), dtype=float),
+        "vol_targeted_momentum": np.sign(ret_1),
+        "vol_targeted_mean_reversion": -np.sign(ret_1),
+        "vol_targeted_kalman_trend": np.sign(kalman_trend),
+    }
+    payload: dict[str, dict[str, dict[str, float] | np.ndarray]] = {}
+    for name, base_signal in signals.items():
+        position = np.asarray(base_signal, dtype=float) * vol_scale
+        direction_up = (position >= 0).astype(int)
+        execution = execution_aware_metrics(
+            current_close=split.current_close_test,
+            target_close=split.target_close_test,
+            direction_up=direction_up,
+            horizon=horizon,
+            fee_bps=float(settings.execution_fee_bps),
+            slippage_bps=float(settings.execution_slippage_bps),
+            max_turnover_per_step=float(settings.execution_max_turnover_per_step),
+            position_signal=position,
+        )
+        paper = paper_trading_metrics(
+            current_close=split.current_close_test,
+            target_close=split.target_close_test,
+            direction_up=direction_up,
+            fee_bps=float(settings.execution_fee_bps),
+            slippage_bps=float(settings.execution_slippage_bps),
+            max_turnover_per_step=float(settings.execution_max_turnover_per_step),
+            initial_capital=float(settings.paper_trade_initial_capital),
+            position_signal=position,
+        )
+        payload[name] = {"execution": execution, "paper": paper, "position_signal": position}
+    return payload
+
+
+def _select_financial_baseline(
+    strategy_book: dict[str, dict[str, dict[str, float] | np.ndarray]]
+) -> tuple[str, dict[str, float], dict[str, float]]:
+    """Select strongest financial baseline strategy for promotion comparison."""
+    best_name = "always_long"
+    best_exec: dict[str, float] = {}
+    best_paper: dict[str, float] = {}
+    best_key = (-math.inf, -math.inf, -math.inf)
+    for name, item in strategy_book.items():
+        execution = item.get("execution", {})
+        paper = item.get("paper", {})
+        if not isinstance(execution, dict) or not isinstance(paper, dict):
+            continue
+        net = float(execution.get("net_mean_return", math.nan))
+        sharpe = float(execution.get("sharpe_net", math.nan))
+        drawdown = float(paper.get("max_drawdown", -1.0))
+        if not math.isfinite(net):
+            continue
+        if not math.isfinite(sharpe):
+            sharpe = -math.inf
+        if not math.isfinite(drawdown):
+            drawdown = -1.0
+        key = (net, sharpe, drawdown)
+        if key > best_key:
+            best_key = key
+            best_name = name
+            best_exec = execution
+            best_paper = paper
+    return best_name, best_exec, best_paper
+
+
+def evaluate_symbol_horizon(
+    symbol: str,
+    spec: HorizonSpec,
+    model_version: str,
+    models_root: Path,
+    write_artifacts: bool = True,
+    as_of_cutoff_by_granularity: dict[str, int] | None = None,
+) -> dict[str, object]:
     """Evaluate symbol horizon."""
     min_samples = min_samples_for_horizon(spec.label)
-    resolved = resolve_horizon_data(symbol, spec, min_samples=min_samples)
+    resolved = resolve_horizon_data(
+        symbol,
+        spec,
+        min_samples=min_samples,
+        as_of_cutoff_by_granularity=as_of_cutoff_by_granularity,
+    )
     if resolved is None:
         return {
             "symbol": symbol,
@@ -1788,7 +2273,7 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
 
     enriched, split = prepared
 
-    cls_best = _select_best_classifier(split)
+    cls_best = _select_best_classifier(split, spec.label)
     reg_best = _select_best_regressor(split, spec.label)
     settings = get_settings()
     regime_cls_models: dict[str, Pipeline] = {}
@@ -1897,7 +2382,6 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         meta_prob_test = np.ones(len(split.x_test), dtype=float)
         action_mask_test = np.ones(len(split.x_test), dtype=bool)
 
-    signed_positions_test = np.where(cls_pred == 1, 1.0, -1.0) * action_mask_test.astype(float)
     conformal_q_abs_usd, conformal_val_coverage = _conformal_quantile(
         y_true=split.target_close_val,
         y_pred=val_reg_pred,
@@ -1931,32 +2415,34 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         y_proba_cls=cls_prob,
         threshold=float(settings.high_confidence_threshold),
     )
+    edge_action_mask = _edge_action_mask(
+        cls_prob=cls_prob,
+        predicted_close=reg_pred,
+        current_close=split.current_close_test,
+        conformal_q_abs_usd=conformal_q_abs_usd,
+        fee_bps=float(settings.execution_fee_bps),
+        slippage_bps=float(settings.execution_slippage_bps),
+        uncertainty_buffer_mult=float(settings.trade_edge_uncertainty_buffer_mult),
+    )
+    vol_scale = _vol_target_position_scale(
+        _frame_column(split.x_test, "volatility_20", default=0.0),
+        horizon=spec.label,
+        target_annual_vol=float(settings.position_target_annual_vol),
+        max_leverage=float(settings.position_max_leverage),
+    )
+    signed_direction = np.where(cls_pred == 1, 1.0, -1.0)
+    signed_positions_no_meta = signed_direction * edge_action_mask.astype(float) * vol_scale
+    signed_positions_test = signed_direction * action_mask_test.astype(float) * edge_action_mask.astype(float) * vol_scale
+
     regime_breakdown = _regime_metrics(split=split, y_pred_cls=cls_pred)
+    alpha_signal_diag = _alpha_signal_diagnostics(split)
     baseline = _baseline_metrics(
         y_true_cls=split.y_test_cls,
         y_true_reg=split.target_close_test,
         current_close=split.current_close_test,
     )
-    baseline_execution_metrics = execution_aware_metrics(
-        current_close=split.current_close_test,
-        target_close=split.target_close_test,
-        direction_up=np.ones_like(cls_pred),
-        horizon=spec.label,
-        fee_bps=float(settings.execution_fee_bps),
-        slippage_bps=float(settings.execution_slippage_bps),
-        max_turnover_per_step=float(settings.execution_max_turnover_per_step),
-        position_signal=np.ones_like(split.current_close_test, dtype=float),
-    )
-    baseline_paper_trading = paper_trading_metrics(
-        current_close=split.current_close_test,
-        target_close=split.target_close_test,
-        direction_up=np.ones_like(cls_pred),
-        fee_bps=float(settings.execution_fee_bps),
-        slippage_bps=float(settings.execution_slippage_bps),
-        max_turnover_per_step=float(settings.execution_max_turnover_per_step),
-        initial_capital=float(settings.paper_trade_initial_capital),
-        position_signal=np.ones_like(split.current_close_test, dtype=float),
-    )
+    strategy_baselines = _baseline_strategy_book(split, spec.label)
+    financial_baseline_name, baseline_execution_metrics, baseline_paper_trading = _select_financial_baseline(strategy_baselines)
     execution_metrics = execution_aware_metrics(
         current_close=split.current_close_test,
         target_close=split.target_close_test,
@@ -1977,6 +2463,26 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         initial_capital=float(settings.paper_trade_initial_capital),
         position_signal=signed_positions_test,
     )
+    no_meta_execution_metrics = execution_aware_metrics(
+        current_close=split.current_close_test,
+        target_close=split.target_close_test,
+        direction_up=cls_pred,
+        horizon=spec.label,
+        fee_bps=float(settings.execution_fee_bps),
+        slippage_bps=float(settings.execution_slippage_bps),
+        max_turnover_per_step=float(settings.execution_max_turnover_per_step),
+        position_signal=signed_positions_no_meta,
+    )
+    no_meta_paper_trading = paper_trading_metrics(
+        current_close=split.current_close_test,
+        target_close=split.target_close_test,
+        direction_up=cls_pred,
+        fee_bps=float(settings.execution_fee_bps),
+        slippage_bps=float(settings.execution_slippage_bps),
+        max_turnover_per_step=float(settings.execution_max_turnover_per_step),
+        initial_capital=float(settings.paper_trade_initial_capital),
+        position_signal=signed_positions_no_meta,
+    )
     walk_forward_gate = strict_gate_walk_forward_diagnostic(
         y_true_cls=split.y_test_cls,
         y_prob_cls=cls_prob,
@@ -1995,17 +2501,12 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
     if walk_forward_enforced:
         walk_forward_pass = bool(walk_forward_gate.get("enabled")) and bool(walk_forward_gate.get("strict_pass_all_folds"))
 
-    pnl_gate_enabled = bool(settings.promotion_require_pnl_above_baseline)
     model_net_mean_return = float(execution_metrics.get("net_mean_return", math.nan))
     baseline_net_mean_return = float(baseline_execution_metrics.get("net_mean_return", math.nan))
-    pnl_gate_pass = (
-        (not pnl_gate_enabled)
-        or (
-            math.isfinite(model_net_mean_return)
-            and math.isfinite(baseline_net_mean_return)
-            and (model_net_mean_return > baseline_net_mean_return)
-        )
-    )
+    model_sharpe_net = float(execution_metrics.get("sharpe_net", math.nan))
+    baseline_sharpe_net = float(baseline_execution_metrics.get("sharpe_net", math.nan))
+    model_total_return = float(paper_trading.get("total_return", math.nan))
+    baseline_total_return = float(baseline_paper_trading.get("total_return", math.nan))
 
     max_drawdown_limit = float(settings.promotion_max_drawdown_limit)
     model_max_drawdown = float(paper_trading.get("max_drawdown", math.nan))
@@ -2015,27 +2516,78 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         drawdown_floor = max(drawdown_floor, baseline_max_drawdown)
     drawdown_gate_pass = math.isfinite(model_max_drawdown) and (model_max_drawdown >= drawdown_floor)
 
-    # Promotion gate is intentionally strict: edge over baseline + leakage safety + optional strict diagnostics.
-    promotion_pass = (
-        metrics["f1"] > baseline["f1"]
-        and metrics["accuracy"] > baseline["accuracy"]
-        and metrics["rmse"] < baseline["rmse"]
-        and pnl_gate_pass
-        and drawdown_gate_pass
-        and leakage_pass
-        and walk_forward_pass
-        and (bool(martingale_diag["pass"]) if martingale_enforced else True)
+    returns_gate_pass = (
+        math.isfinite(model_net_mean_return)
+        and math.isfinite(baseline_net_mean_return)
+        and (model_net_mean_return > baseline_net_mean_return)
     )
+    if bool(settings.promotion_require_positive_net_return):
+        returns_gate_pass = returns_gate_pass and math.isfinite(model_net_mean_return) and (model_net_mean_return > 0.0)
+
+    sharpe_gate_pass = True
+    if bool(settings.promotion_require_sharpe_above_baseline):
+        sharpe_gate_pass = (
+            math.isfinite(model_sharpe_net)
+            and math.isfinite(baseline_sharpe_net)
+            and (model_sharpe_net > baseline_sharpe_net)
+            and (model_sharpe_net >= float(settings.promotion_min_sharpe_net))
+        )
+
+    total_return_gate_pass = True
+    if bool(settings.promotion_require_total_return_above_baseline):
+        total_return_gate_pass = (
+            math.isfinite(model_total_return)
+            and math.isfinite(baseline_total_return)
+            and (model_total_return > baseline_total_return)
+        )
+
+    classification_gate_pass = (metrics["f1"] > baseline["f1"]) and (metrics["accuracy"] > baseline["accuracy"])
+    regression_gate_pass = metrics["rmse"] < baseline["rmse"]
+    require_classification = bool(settings.promotion_require_classification_edge)
+    require_regression = bool(settings.promotion_require_regression_edge)
+    gate_mode = settings.promotion_gate_mode.strip().lower()
+    returns_first_mode = gate_mode in {"returns_first", "returns-first", "financial"}
+
+    if returns_first_mode:
+        promotion_pass = (
+            returns_gate_pass
+            and sharpe_gate_pass
+            and total_return_gate_pass
+            and drawdown_gate_pass
+            and leakage_pass
+            and walk_forward_pass
+            and (bool(martingale_diag["pass"]) if martingale_enforced else True)
+            and ((classification_gate_pass) if require_classification else True)
+            and ((regression_gate_pass) if require_regression else True)
+        )
+    else:
+        promotion_pass = (
+            classification_gate_pass
+            and regression_gate_pass
+            and returns_gate_pass
+            and drawdown_gate_pass
+            and leakage_pass
+            and walk_forward_pass
+            and (bool(martingale_diag["pass"]) if martingale_enforced else True)
+        )
 
     failed_reasons: list[str] = []
-    if not (metrics["f1"] > baseline["f1"]):
+    if require_classification and not (metrics["f1"] > baseline["f1"]):
         failed_reasons.append("classification_f1_not_above_baseline")
-    if not (metrics["accuracy"] > baseline["accuracy"]):
+    if require_classification and not (metrics["accuracy"] > baseline["accuracy"]):
         failed_reasons.append("classification_accuracy_not_above_baseline")
-    if not (metrics["rmse"] < baseline["rmse"]):
+    if require_regression and not (metrics["rmse"] < baseline["rmse"]):
         failed_reasons.append("regression_rmse_not_below_baseline")
-    if pnl_gate_enabled and not pnl_gate_pass:
+    if not returns_gate_pass:
         failed_reasons.append("execution_net_mean_return_not_above_baseline")
+    if bool(settings.promotion_require_positive_net_return) and not (
+        math.isfinite(model_net_mean_return) and model_net_mean_return > 0.0
+    ):
+        failed_reasons.append("execution_net_mean_return_not_positive")
+    if bool(settings.promotion_require_sharpe_above_baseline) and not sharpe_gate_pass:
+        failed_reasons.append("execution_sharpe_not_above_baseline")
+    if bool(settings.promotion_require_total_return_above_baseline) and not total_return_gate_pass:
+        failed_reasons.append("paper_trading_total_return_not_above_baseline")
     if not drawdown_gate_pass:
         failed_reasons.append("paper_trading_max_drawdown_below_limit")
     if not leakage_pass:
@@ -2081,17 +2633,27 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         "steps_ahead": steps,
         "rows_total": int(len(enriched)),
         "rows_test": int(len(split.x_test)),
+        "as_of_cutoff_time": (
+            int(as_of_cutoff_by_granularity.get(granularity))
+            if isinstance(as_of_cutoff_by_granularity, dict) and granularity in as_of_cutoff_by_granularity
+            else None
+        ),
+        "train_start_time": int(frame["start_time"].iloc[0]) if len(frame) else None,
+        "train_end_time": int(frame["start_time"].iloc[-1]) if len(frame) else None,
         "selected_models": {
             "classifier": cls_best.model_name,
             "regressor": reg_best.model_name,
             "meta_labeler": ("logistic_regression_meta" if meta_result.enabled else "disabled"),
             "classifier_down_weight_boost": float(cls_best.class_down_weight_boost),
             "classifier_threshold_tuning": cls_best.threshold_tuning or {},
+            "classifier_stability": cls_best.stability or {},
             "regression_target": reg_best.regression_target,
             "regression_blend_alpha": reg_blend_alpha,
+            "regression_stability": reg_best.stability or {},
             "directional_tilt_gamma": float(directional_tilt_gamma),
         },
         "feature_columns": split.feature_columns,
+        "alpha_kill_diagnostics": split.alpha_kill_diagnostics,
         "metrics": metrics,
         "baseline": baseline,
         "near_pass_delta": _near_pass_delta(metrics, baseline),
@@ -2113,12 +2675,32 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         "log_return_clip": float(HORIZON_LOG_RETURN_CLIP.get(spec.label, 1.0)),
         "confidence_slice": confidence_slice,
         "regime_breakdown": regime_breakdown,
+        "alpha_signal_diagnostics": alpha_signal_diag,
         "metric_confidence_intervals": metric_confidence_intervals,
         "data_leakage_checks": split.leakage_diagnostic,
         "execution_aware_metrics": execution_metrics,
         "baseline_execution_aware_metrics": baseline_execution_metrics,
         "paper_trading_metrics": paper_trading,
         "baseline_paper_trading_metrics": baseline_paper_trading,
+        "financial_baseline_strategy": financial_baseline_name,
+        "financial_baseline_candidates": {
+            name: {
+                "execution": (item.get("execution") if isinstance(item, dict) else {}),
+                "paper": (item.get("paper") if isinstance(item, dict) else {}),
+            }
+            for name, item in strategy_baselines.items()
+        },
+        "ablation_metrics": {
+            "with_meta_abstention": {
+                "execution": execution_metrics,
+                "paper": paper_trading,
+            },
+            "without_meta_abstention": {
+                "execution": no_meta_execution_metrics,
+                "paper": no_meta_paper_trading,
+            },
+            "edge_filter_take_rate": float(np.mean(edge_action_mask.astype(float))) if len(edge_action_mask) else 0.0,
+        },
         "walk_forward_gate": walk_forward_gate,
         "walk_forward_mode": walk_forward_mode,
         "walk_forward_enforced": walk_forward_enforced,
@@ -2145,10 +2727,16 @@ def evaluate_symbol_horizon(symbol: str, spec: HorizonSpec, model_version: str, 
         "promotion_gate": {
             "passed": promotion_pass,
             "failed_reasons": failed_reasons,
+            "mode": settings.promotion_gate_mode,
             "rules": {
-                "classification": ["f1 > baseline.f1", "accuracy > baseline.accuracy"],
-                "regression": ["rmse < baseline.rmse"],
-                "execution": ["net_mean_return > baseline.net_mean_return (optional strict gate)"],
+                "classification": ["f1 > baseline.f1", "accuracy > baseline.accuracy (optional)"],
+                "regression": ["rmse < baseline.rmse (optional)"],
+                "execution": [
+                    "net_mean_return > selected_financial_baseline.net_mean_return",
+                    "net_mean_return > 0 (if configured)",
+                    "sharpe_net > selected_financial_baseline.sharpe_net (if configured)",
+                    "total_return > selected_financial_baseline.total_return (if configured)",
+                ],
                 "risk": ["max_drawdown >= max(PROMOTION_MAX_DRAWDOWN_LIMIT, baseline.max_drawdown)"],
                 "leakage": ["no train/val/test overlap with purge gap >= steps_ahead"],
                 "walk_forward": ["strict_pass_all_folds == true (strict mode only)"],

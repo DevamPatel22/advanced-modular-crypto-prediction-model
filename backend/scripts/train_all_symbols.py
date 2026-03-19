@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 import sys
@@ -49,6 +50,106 @@ def _parse_horizons(raw: str) -> list[str]:
     return sorted(set(horizons))
 
 
+def _parse_symbol_horizon_pairs(raw: str) -> set[tuple[str, str]]:
+    """Parse SYMBOL:HORIZON CSV into a normalized pair set."""
+    out: set[tuple[str, str]] = set()
+    for token in raw.split(","):
+        item = token.strip()
+        if not item or ":" not in item:
+            continue
+        symbol_raw, horizon_raw = [part.strip() for part in item.split(":", 1)]
+        if not symbol_raw or not horizon_raw:
+            continue
+        out.add((symbol_raw.upper(), horizon_raw.lower()))
+    return out
+
+
+def _parse_int_map(raw: str) -> dict[str, int]:
+    """Parse granularity:int mapping text."""
+    parsed: dict[str, int] = {}
+    for token in raw.split(","):
+        item = token.strip()
+        if not item or ":" not in item:
+            continue
+        key_raw, value_raw = item.split(":", 1)
+        key = key_raw.strip()
+        try:
+            value = int(value_raw.strip())
+        except ValueError:
+            continue
+        if key and value > 0:
+            parsed[key] = value
+    return parsed
+
+
+def _query_dataset_snapshot(db_path: Path, symbols: list[str], granularities: list[str]) -> list[dict[str, object]]:
+    """Query rows/min/max timestamp snapshot for dataset lineage."""
+    if not db_path.exists() or not symbols or not granularities:
+        return []
+    placeholders_symbols = ",".join("?" for _ in symbols)
+    placeholders_granularities = ",".join("?" for _ in granularities)
+    query = f"""
+        SELECT symbol, granularity, COUNT(*) AS row_count, MIN(start_time) AS min_start_time, MAX(start_time) AS max_start_time
+        FROM candles
+        WHERE symbol IN ({placeholders_symbols}) AND granularity IN ({placeholders_granularities})
+        GROUP BY symbol, granularity
+        ORDER BY symbol ASC, granularity ASC
+    """
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(query, symbols + granularities).fetchall()
+    out: list[dict[str, object]] = []
+    for symbol, granularity, row_count, min_start, max_start in rows:
+        out.append(
+            {
+                "symbol": str(symbol),
+                "granularity": str(granularity),
+                "row_count": int(row_count),
+                "min_start_time": int(min_start) if min_start is not None else None,
+                "max_start_time": int(max_start) if max_start is not None else None,
+            }
+        )
+    return out
+
+
+def _compute_asof_cutoff_map(
+    dataset_snapshot: list[dict[str, object]],
+    symbols: list[str],
+    granularities: list[str],
+) -> tuple[dict[str, int], dict[str, dict[str, object]]]:
+    """Compute synchronized as-of cutoffs by granularity and coverage diagnostics."""
+    by_granularity: dict[str, dict[str, int]] = {granularity: {} for granularity in granularities}
+    for row in dataset_snapshot:
+        symbol = str(row.get("symbol", "")).upper()
+        granularity = str(row.get("granularity", ""))
+        latest = row.get("max_start_time")
+        if symbol and granularity in by_granularity and isinstance(latest, int):
+            by_granularity[granularity][symbol] = latest
+
+    cutoff_map: dict[str, int] = {}
+    diagnostics: dict[str, dict[str, object]] = {}
+    for granularity in granularities:
+        latest_by_symbol = by_granularity.get(granularity, {})
+        available_count = len(latest_by_symbol)
+        expected_count = len(symbols)
+        if available_count == 0:
+            diagnostics[granularity] = {
+                "available_symbols": 0,
+                "expected_symbols": expected_count,
+                "coverage_ratio": 0.0,
+                "cutoff_start_time": None,
+            }
+            continue
+        cutoff = min(latest_by_symbol.values())
+        cutoff_map[granularity] = int(cutoff)
+        diagnostics[granularity] = {
+            "available_symbols": available_count,
+            "expected_symbols": expected_count,
+            "coverage_ratio": float(available_count / max(expected_count, 1)),
+            "cutoff_start_time": int(cutoff),
+        }
+    return cutoff_map, diagnostics
+
+
 def _sha256_file(path: Path) -> str:
     """Internal helper to compute sha256 file."""
     digest = hashlib.sha256()
@@ -87,6 +188,16 @@ def main() -> None:
         action="store_true",
         help="Allow training into an existing model version folder (disabled by default for immutability)",
     )
+    parser.add_argument(
+        "--exclude-symbol-horizons",
+        default="",
+        help="Optional comma-separated SYMBOL:HORIZON list to skip from training",
+    )
+    parser.add_argument(
+        "--asof-cutoff-map",
+        default="",
+        help="Optional granularity:start_time map for synchronized training cutoff (example: 1m:1772559060,1h:1772557200)",
+    )
     args = parser.parse_args()
     settings = get_settings()
 
@@ -117,6 +228,18 @@ def main() -> None:
         if not selected:
             raise SystemExit("No valid horizons selected; check --horizons values")
         horizon_specs = selected
+    excluded_pairs = _parse_symbol_horizon_pairs(args.exclude_symbol_horizons)
+
+    db_path = PROJECT_ROOT / settings.market_data_sqlite_path
+    granularities_for_run = sorted({granularity for spec in horizon_specs for granularity, _steps in spec.candidates})
+    dataset_snapshot = _query_dataset_snapshot(db_path=db_path, symbols=universe, granularities=granularities_for_run)
+    auto_asof_map, asof_diagnostics = _compute_asof_cutoff_map(
+        dataset_snapshot=dataset_snapshot,
+        symbols=universe,
+        granularities=granularities_for_run,
+    )
+    explicit_asof_map = _parse_int_map(args.asof_cutoff_map)
+    asof_cutoff_map = explicit_asof_map if explicit_asof_map else (auto_asof_map if settings.train_asof_sync_enabled else {})
 
     aggregate: dict[str, object] = {
         "generated_at": datetime.now(tz=UTC).isoformat(),
@@ -127,6 +250,14 @@ def main() -> None:
             "symbols": universe,
         },
         "selected_horizons": [spec.label for spec in horizon_specs],
+        "excluded_symbol_horizons": sorted([f"{symbol}:{horizon}" for symbol, horizon in excluded_pairs]),
+        "asof_cutoff_map": asof_cutoff_map,
+        "asof_sync_enabled": bool(settings.train_asof_sync_enabled),
+        "asof_diagnostics": asof_diagnostics,
+        "dataset_snapshot": {
+            "db_path": str(db_path),
+            "rows": dataset_snapshot,
+        },
         "promotion_gate": {
             "classification": ["f1 > baseline.f1", "accuracy > baseline.accuracy"],
             "regression": ["rmse < baseline.rmse"],
@@ -160,6 +291,15 @@ def main() -> None:
         }
 
         for spec in horizon_specs:
+            if (symbol, spec.label) in excluded_pairs:
+                symbol_result["horizons"][spec.label] = {
+                    "symbol": symbol,
+                    "horizon": spec.label,
+                    "status": "excluded_data_quality",
+                    "reason": "excluded_by_retrain_controller",
+                }
+                symbol_result["summary"]["insufficient"] = int(symbol_result["summary"]["insufficient"]) + 1
+                continue
             # Each symbol+horizon is trained/evaluated independently with strict gate checks.
             entry = evaluate_symbol_horizon(
                 symbol=symbol,
@@ -167,6 +307,7 @@ def main() -> None:
                 model_version=args.model_version,
                 models_root=models_root,
                 write_artifacts=True,
+                as_of_cutoff_by_granularity=asof_cutoff_map if asof_cutoff_map else None,
             )
             symbol_result["horizons"][spec.label] = entry
 
@@ -206,6 +347,10 @@ def main() -> None:
         "feature_version": FEATURE_VERSION,
         "universe_count": len(universe),
         "symbols": universe,
+        "selected_horizons": [spec.label for spec in horizon_specs],
+        "excluded_symbol_horizons": sorted([f"{symbol}:{horizon}" for symbol, horizon in excluded_pairs]),
+        "asof_cutoff_map": asof_cutoff_map,
+        "dataset_snapshot_path": str((version_root / "dataset_manifest.json")),
     }
     version_manifest_path = version_root / "manifest.json"
     version_manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -234,6 +379,19 @@ def main() -> None:
     artifact_manifest_path.write_text(json.dumps(artifact_manifest, indent=2), encoding="utf-8")
     aggregate["artifact_manifest"] = str(artifact_manifest_path)
 
+    dataset_manifest_path = version_root / "dataset_manifest.json"
+    dataset_manifest = {
+        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "model_version": args.model_version,
+        "db_path": str(db_path),
+        "asof_cutoff_map": asof_cutoff_map,
+        "asof_diagnostics": asof_diagnostics,
+        "granularities": granularities_for_run,
+        "rows": dataset_snapshot,
+    }
+    dataset_manifest_path.write_text(json.dumps(dataset_manifest, indent=2), encoding="utf-8")
+    aggregate["dataset_manifest"] = str(dataset_manifest_path)
+
     output_path = PROJECT_ROOT / args.output
     if isinstance(aggregate.get("near_pass_candidates"), list):
         aggregate["near_pass_candidates"] = sorted(
@@ -253,6 +411,7 @@ def main() -> None:
             "summary_report": str(output_path),
             "manifest": str(version_manifest_path),
             "artifact_manifest": str(artifact_manifest_path),
+            "dataset_manifest": str(dataset_manifest_path),
             "near_pass_candidates": len(aggregate.get("near_pass_candidates", [])) if isinstance(aggregate.get("near_pass_candidates"), list) else None,
         },
     )
@@ -262,6 +421,7 @@ def main() -> None:
                 "summary_report": str(output_path),
                 "manifest": str(version_manifest_path),
                 "artifact_manifest": str(artifact_manifest_path),
+                "dataset_manifest": str(dataset_manifest_path),
             },
             indent=2,
         )

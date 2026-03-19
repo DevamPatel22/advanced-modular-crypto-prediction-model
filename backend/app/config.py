@@ -65,6 +65,30 @@ class Settings(BaseSettings):
     promotion_max_drawdown_limit: float = -0.45
     metric_ci_bootstrap_samples: int = 400
     metric_ci_level: float = 0.95
+    # Returns-first promotion controls.
+    promotion_gate_mode: str = "returns_first"
+    promotion_require_positive_net_return: bool = True
+    promotion_require_sharpe_above_baseline: bool = True
+    promotion_require_total_return_above_baseline: bool = True
+    promotion_require_classification_edge: bool = False
+    promotion_require_regression_edge: bool = False
+    promotion_min_sharpe_net: float = 0.0
+    # Position sizing and decision policy controls.
+    position_target_annual_vol: float = 0.35
+    position_max_leverage: float = 1.0
+    trade_edge_uncertainty_buffer_mult: float = 1.0
+    # Candidate model family controls.
+    model_candidate_mode: str = "theory"
+    model_enable_ensemble_challenger: bool = True
+    # Hypothesis governance controls.
+    alpha_kill_switch_enabled: bool = True
+    alpha_kill_lookback_rows: int = 360
+    alpha_kill_min_ic: float = 0.005
+    alpha_kill_min_decile_spread_bps: float = 0.5
+    alpha_kill_min_sign_alignment: float = 0.51
+    alpha_kill_min_survival_ratio: float = 0.50
+    # As-of synchronization for training data.
+    train_asof_sync_enabled: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",

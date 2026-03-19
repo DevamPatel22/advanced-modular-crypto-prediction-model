@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-FEATURE_VERSION = "v3"
+FEATURE_VERSION = "v4"
 
 FEATURE_COLUMNS = [
     "ret_1",
@@ -47,6 +47,11 @@ FEATURE_COLUMNS = [
     "open_interest_proxy_20",
     "basis_proxy_30",
     "onchain_activity_proxy_20",
+    "reversal_pressure_5",
+    "mean_reversion_z_20",
+    "volatility_cluster_20_60",
+    "kalman_level_ratio",
+    "kalman_trend_5",
     "markov_prob_down",
     "markov_prob_flat",
     "markov_prob_up",
@@ -80,6 +85,11 @@ SHORT_FEATURE_COLUMNS = [
     "range_expansion_10",
     "funding_rate_proxy_8h",
     "open_interest_proxy_20",
+    "reversal_pressure_5",
+    "mean_reversion_z_20",
+    "volatility_cluster_20_60",
+    "kalman_level_ratio",
+    "kalman_trend_5",
     "markov_prob_down",
     "markov_prob_flat",
     "markov_prob_up",
@@ -111,6 +121,11 @@ LONG_FEATURE_COLUMNS = [
     "open_interest_proxy_20",
     "basis_proxy_30",
     "onchain_activity_proxy_20",
+    "reversal_pressure_5",
+    "mean_reversion_z_20",
+    "volatility_cluster_20_60",
+    "kalman_level_ratio",
+    "kalman_trend_5",
     "markov_prob_down",
     "markov_prob_flat",
     "markov_prob_up",
@@ -189,6 +204,34 @@ def _markov_transition_features(states: pd.Series) -> pd.DataFrame:
     )
 
 
+def _kalman_level(close: pd.Series, process_var: float = 1e-4, obs_var: float = 1e-2) -> pd.Series:
+    # Lightweight local-level filter to introduce structure-aware trend features.
+    """Internal helper to compute Kalman-smoothed level."""
+    values = close.to_numpy(dtype=float)
+    if values.size == 0:
+        return pd.Series(dtype=float, index=close.index)
+
+    level = np.zeros(values.shape[0], dtype=float)
+    state = float(values[0]) if np.isfinite(values[0]) else 0.0
+    covariance = 1.0
+    level[0] = state
+
+    for idx in range(1, values.shape[0]):
+        predicted_state = state
+        predicted_cov = covariance + process_var
+        observation = float(values[idx])
+        if np.isfinite(observation):
+            gain = predicted_cov / (predicted_cov + obs_var)
+            state = predicted_state + (gain * (observation - predicted_state))
+            covariance = (1.0 - gain) * predicted_cov
+        else:
+            state = predicted_state
+            covariance = predicted_cov
+        level[idx] = state
+
+    return pd.Series(level, index=close.index)
+
+
 def build_features(df: pd.DataFrame) -> pd.DataFrame:
     """Build features."""
     frame = df.copy()
@@ -253,6 +296,14 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     frame["basis_proxy_30"] = frame["ma_30_ratio"] - frame["ema_26_ratio"]
     # Free on-chain activity proxy from synchronized flow + volatility shock.
     frame["onchain_activity_proxy_20"] = frame["volume_z_20"] * (1.0 + np.abs(frame["shock_z_20"]))
+    # Mean-reversion alpha: extreme short-window move often mean-reverts under stable liquidity.
+    frame["reversal_pressure_5"] = -frame["ret_5"] / (frame["volatility_20"] + 1e-12)
+    frame["mean_reversion_z_20"] = -(frame["close"] - frame["ma_30"]) / ((frame["close"] * frame["volatility_20"]) + 1e-12)
+    # Volatility clustering alpha: elevated short-vs-long vol can imply regime transition risk.
+    frame["volatility_cluster_20_60"] = frame["volatility_20"] / (frame["volatility_60"] + 1e-12) - 1.0
+    kalman_level = _kalman_level(frame["close"])
+    frame["kalman_level_ratio"] = frame["close"] / (kalman_level + 1e-12) - 1.0
+    frame["kalman_trend_5"] = kalman_level.pct_change(5)
     states = _encode_state(frame["ret_1"])
     frame = frame.join(_markov_transition_features(states))
 

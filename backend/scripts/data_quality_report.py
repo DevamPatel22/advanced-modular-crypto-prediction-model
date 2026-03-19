@@ -45,6 +45,14 @@ DEFAULT_MIN_COVERAGE_RATIO = {
     "6h": 0.90,
     "1d": 0.92,
 }
+DEFAULT_MAX_CROSS_SYMBOL_LAG_STEPS = {
+    "1m": 480,
+    "5m": 192,
+    "15m": 96,
+    "1h": 48,
+    "6h": 20,
+    "1d": 10,
+}
 
 
 def _parse_csv(raw: str) -> list[str]:
@@ -193,6 +201,61 @@ def _pair_quality(
     }
 
 
+def _cross_symbol_freshness(
+    pairs: list[dict[str, object]],
+    symbols: list[str],
+    granularities: list[str],
+    max_cross_symbol_lag_steps_map: dict[str, int],
+) -> list[dict[str, object]]:
+    """Evaluate latest-timestamp synchronization across symbols by granularity."""
+    out: list[dict[str, object]] = []
+    for granularity in granularities:
+        latest_by_symbol: dict[str, int | None] = {}
+        for symbol in symbols:
+            latest = None
+            for pair in pairs:
+                if pair.get("symbol") == symbol and pair.get("granularity") == granularity:
+                    value = pair.get("latest_start_time")
+                    latest = int(value) if isinstance(value, int) else None
+                    break
+            latest_by_symbol[symbol] = latest
+
+        present = [value for value in latest_by_symbol.values() if isinstance(value, int)]
+        max_allowed = int(max_cross_symbol_lag_steps_map.get(granularity, 0))
+        if len(present) < len(symbols) or len(present) == 0:
+            out.append(
+                {
+                    "granularity": granularity,
+                    "symbols_covered": len(present),
+                    "symbols_expected": len(symbols),
+                    "latest_by_symbol": latest_by_symbol,
+                    "lag_steps_spread": None,
+                    "max_allowed_lag_steps": max_allowed,
+                    "gate_passed": False,
+                    "reason": "missing_latest_timestamp",
+                }
+            )
+            continue
+
+        step_seconds = int(GRANULARITY_TO_SECONDS[granularity])
+        latest_max = max(present)
+        latest_min = min(present)
+        lag_steps_spread = (latest_max - latest_min) / max(step_seconds, 1)
+        out.append(
+            {
+                "granularity": granularity,
+                "symbols_covered": len(present),
+                "symbols_expected": len(symbols),
+                "latest_by_symbol": latest_by_symbol,
+                "lag_steps_spread": round(float(lag_steps_spread), 3),
+                "max_allowed_lag_steps": max_allowed,
+                "gate_passed": bool(lag_steps_spread <= max_allowed),
+                "reason": None if lag_steps_spread <= max_allowed else "cross_symbol_freshness_spread_too_large",
+            }
+        )
+    return out
+
+
 def main() -> None:
     """Run the script entrypoint."""
     parser = argparse.ArgumentParser(description="Generate data quality report for market candle history")
@@ -223,6 +286,11 @@ def main() -> None:
         default="",
         help="Override minimum coverage ratio per granularity, format: 1m:0.8,1h:0.9",
     )
+    parser.add_argument(
+        "--max-cross-symbol-lag-steps-map",
+        default="",
+        help="Max allowed latest-timestamp spread across symbols per granularity, format: 1m:480,1h:48",
+    )
     parser.add_argument("--output", default="reports/data_quality_report.json", help="Output JSON path")
     args = parser.parse_args()
 
@@ -237,6 +305,7 @@ def main() -> None:
     min_rows_map = _parse_int_map(args.min_rows_map, DEFAULT_MIN_ROWS)
     max_stale_steps_map = _parse_int_map(args.max_stale_steps_map, DEFAULT_MAX_STALE_STEPS)
     min_coverage_ratio_map = _parse_float_map(args.min_coverage_ratio_map, DEFAULT_MIN_COVERAGE_RATIO)
+    max_cross_symbol_lag_steps_map = _parse_int_map(args.max_cross_symbol_lag_steps_map, DEFAULT_MAX_CROSS_SYMBOL_LAG_STEPS)
     max_gap_ratio = float(max(args.max_gap_ratio, 0.0))
 
     db_path = _db_path()
@@ -260,6 +329,13 @@ def main() -> None:
                 report_pairs.append(pair_report)
 
     failing_pairs = [item for item in report_pairs if not bool(item.get("gate_passed"))]
+    cross_symbol_freshness = _cross_symbol_freshness(
+        pairs=report_pairs,
+        symbols=symbols,
+        granularities=granularities,
+        max_cross_symbol_lag_steps_map=max_cross_symbol_lag_steps_map,
+    )
+    failing_freshness = [item for item in cross_symbol_freshness if not bool(item.get("gate_passed"))]
     symbol_summary: dict[str, dict[str, object]] = {}
     for symbol in symbols:
         entries = [item for item in report_pairs if item["symbol"] == symbol]
@@ -278,13 +354,19 @@ def main() -> None:
             "min_rows_map": {k: int(v) for k, v in min_rows_map.items() if k in granularities},
             "max_stale_steps_map": {k: int(v) for k, v in max_stale_steps_map.items() if k in granularities},
             "min_coverage_ratio_map": {k: float(v) for k, v in min_coverage_ratio_map.items() if k in granularities},
+            "max_cross_symbol_lag_steps_map": {
+                k: int(v) for k, v in max_cross_symbol_lag_steps_map.items() if k in granularities
+            },
             "max_gap_ratio": max_gap_ratio,
         },
         "pair_count": len(report_pairs),
         "failing_pair_count": len(failing_pairs),
-        "gate_passed": len(failing_pairs) == 0,
+        "failing_cross_symbol_freshness_count": len(failing_freshness),
+        "gate_passed": len(failing_pairs) == 0 and len(failing_freshness) == 0,
         "symbol_summary": symbol_summary,
         "failing_pairs": failing_pairs,
+        "cross_symbol_freshness": cross_symbol_freshness,
+        "failing_cross_symbol_freshness": failing_freshness,
         "pairs": report_pairs,
     }
 
