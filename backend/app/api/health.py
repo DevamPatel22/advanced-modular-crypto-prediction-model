@@ -3,7 +3,13 @@
 from fastapi import APIRouter, Query
 
 from app.config import get_settings
-from app.services.data_readiness import latest_data_quality_report, latest_scorecard_report, source_health_summary
+from app.services.data_readiness import (
+    latest_data_quality_report,
+    latest_robust_validation_report,
+    latest_scorecard_report,
+    latest_shadow_report,
+    source_health_summary,
+)
 
 router = APIRouter(tags=["health"])
 
@@ -47,4 +53,22 @@ def health_model_scorecard() -> dict[str, object]:
     return {
         "status": "ok",
         "scorecard": scorecard,
+    }
+
+
+@router.get("/health/robust-validation")
+def health_robust_validation() -> dict[str, object]:
+    """Expose the newest robust-validation bundle."""
+    return {
+        "status": "ok",
+        "robust_validation": latest_robust_validation_report(),
+    }
+
+
+@router.get("/health/shadow-trading")
+def health_shadow_trading() -> dict[str, object]:
+    """Expose the newest live shadow-trading summary."""
+    return {
+        "status": "ok",
+        "shadow_trading": latest_shadow_report(),
     }

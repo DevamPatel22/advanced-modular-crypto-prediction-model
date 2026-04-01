@@ -58,6 +58,19 @@ def _find_horizon_spec(horizon: str) -> HorizonSpec | None:
     return None
 
 
+def _artifact_paths_for_model(model_version: str, symbol: str, horizon: str) -> dict[str, Path] | None:
+    """Resolve artifact paths for an explicit model version."""
+    settings = get_settings()
+    symbol_dir = Path(settings.model_artifacts_root) / model_version / symbol.upper()
+    paths = {
+        "classification": symbol_dir / f"cls_{horizon}.joblib",
+        "regression": symbol_dir / f"reg_{horizon}.joblib",
+        "calibration": symbol_dir / f"calibration_{horizon}.json",
+        "metrics": symbol_dir / f"metrics_{horizon}.json",
+    }
+    return paths if all(path.exists() for path in paths.values()) else None
+
+
 def _load_cached_model(path: Path) -> object:
     """Load cached model. Internal helper."""
     key = str(path.resolve())
@@ -248,11 +261,18 @@ def _latest_features(symbol: str, spec: HorizonSpec, selected_features: list[str
     return None
 
 
-def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionResponse | None, str | None]:
+def _predict_from_artifacts(
+    payload: PredictionRequest,
+    *,
+    model_version_override: str | None = None,
+) -> tuple[PredictionResponse | None, str | None]:
     """Internal helper to compute predict from artifacts."""
     registry = ModelRegistry()
     # Resolve only explicitly promoted symbol+horizon artifacts.
-    artifact_paths = registry.resolve_artifacts(payload.symbol, payload.horizon)
+    if model_version_override:
+        artifact_paths = _artifact_paths_for_model(model_version_override, payload.symbol, payload.horizon)
+    else:
+        artifact_paths = registry.resolve_artifacts(payload.symbol, payload.horizon)
     if artifact_paths is None:
         return None, "symbol_horizon_not_promoted_or_missing_artifacts"
 
@@ -354,7 +374,7 @@ def _predict_from_artifacts(payload: PredictionRequest) -> tuple[PredictionRespo
         fallback_high=high_usd,
     )
 
-    model_version = registry.get_active_model_version()
+    model_version = model_version_override or registry.get_active_model_version()
     debug = None
     if payload.include_debug:
         debug = {
@@ -460,3 +480,11 @@ def generate_prediction(payload: PredictionRequest) -> PredictionResponse:
         model_version=ModelRegistry().get_active_model_version() or settings.default_model_version,
         debug=debug,
     )
+
+
+def generate_prediction_for_model(payload: PredictionRequest, model_version: str) -> PredictionResponse:
+    """Generate a model-backed prediction from a specific frozen model version."""
+    model_response, failure_reason = _predict_from_artifacts(payload, model_version_override=model_version)
+    if model_response is None:
+        raise ValueError(f"Unable to generate shadow prediction from {model_version}: {failure_reason}")
+    return model_response

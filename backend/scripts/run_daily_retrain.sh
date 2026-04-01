@@ -16,7 +16,6 @@ export LOKY_MAX_CPU_COUNT=4
 
 python scripts/near_promotion_retrain.py \
   --phase phase3 \
-  --skip-ingest \
   --symbols BTC-USD,ETH-USD,SOL-USD \
   --max-pairs 6 \
   >> "$LOG_DIR/launchd_daily_retrain.log" 2>&1

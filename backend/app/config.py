@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     market_data_sqlite_path: str = "data/market_data.db"
     model_artifacts_root: str = "data/models"
     model_registry_path: str = "data/models/registry.json"
+    shadow_champion_path: str = "data/models/shadow_champion.json"
+    shadow_predictions_path: str = "reports/shadow_predictions.jsonl"
+    shadow_report_path: str = "reports/shadow_report_latest.json"
+    shadow_settlement_grace_seconds: int = 300
     market_data_default_granularity: str = "1h"
     market_data_default_limit: int = 200
     ticker_stream_interval_seconds: int = 2
@@ -48,7 +52,7 @@ class Settings(BaseSettings):
     prediction_abstain_to_fallback: bool = True
     walk_forward_threshold_enabled: bool = True
     walk_forward_threshold_folds: int = 4
-    walk_forward_gate_mode: str = "diagnostic"
+    walk_forward_gate_mode: str = "strict"
     walk_forward_gate_folds: int = 4
     meta_labeling_enabled: bool = True
     meta_label_min_move_bps: float = 8.0
@@ -73,10 +77,20 @@ class Settings(BaseSettings):
     promotion_require_classification_edge: bool = False
     promotion_require_regression_edge: bool = False
     promotion_min_sharpe_net: float = 0.0
+    financial_baseline_selection_mode: str = "fixed"
+    financial_baseline_strategy: str = "always_long"
     # Position sizing and decision policy controls.
     position_target_annual_vol: float = 0.35
     position_max_leverage: float = 1.0
     trade_edge_uncertainty_buffer_mult: float = 1.0
+    edge_action_min_take_rate: float = 0.05
+    edge_action_cost_relax_mult: float = 0.50
+    edge_action_threshold_scale: float = 1.0
+    trade_direction_policy: str = "auto"
+    baseline_risk_matched: bool = True
+    returns_tuning_enabled: bool = True
+    returns_tuning_policies: str = "long_flat,long_short,long_only"
+    returns_tuning_position_scale_candidates: str = "0.5,0.75,1.0,1.25,1.5"
     # Candidate model family controls.
     model_candidate_mode: str = "theory"
     model_enable_ensemble_challenger: bool = True
@@ -87,8 +101,19 @@ class Settings(BaseSettings):
     alpha_kill_min_decile_spread_bps: float = 0.5
     alpha_kill_min_sign_alignment: float = 0.51
     alpha_kill_min_survival_ratio: float = 0.50
+    alpha_kill_require_financial_pass: bool = True
+    alpha_kill_min_signal_net_mean_return: float = 0.0
+    alpha_kill_min_signal_sharpe_net: float = 0.0
+    alpha_kill_max_signal_drawdown_limit: float = -0.45
     # As-of synchronization for training data.
     train_asof_sync_enabled: bool = True
+    # Row-depth synchronization for cross-symbol parity windows.
+    train_sync_row_depth_enabled: bool = True
+    train_sync_row_depth_min_coverage_ratio: float = 1.0
+    train_sync_row_depth_require_all_granularities: bool = True
+    # Horizon-specific recent-window caps prevent stale regimes from diluting short/medium horizon training.
+    train_horizon_windowing_enabled: bool = True
+    train_horizon_window_rows_map: str = "5m:12000,1h:12000,3h:11000,6h:9000,12h:8000,1d:7000,1w:5000,1mo:3500,3mo:2500"
 
     model_config = SettingsConfigDict(
         env_file=".env",

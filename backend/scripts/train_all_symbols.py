@@ -19,7 +19,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.ml.features import FEATURE_VERSION
-from app.ml.training import all_horizon_specs, evaluate_symbol_horizon, list_symbols_with_any_candles
+from app.ml.training import all_horizon_specs, evaluate_symbol_horizon, list_symbols_with_any_candles, training_window_config_snapshot
 from app.services.markets import fetch_symbols_by_quote
 from app.services.experiment_tracker import log_experiment_event
 from app.config import get_settings
@@ -150,6 +150,44 @@ def _compute_asof_cutoff_map(
     return cutoff_map, diagnostics
 
 
+def _compute_sync_row_depth_map(
+    dataset_snapshot: list[dict[str, object]],
+    symbols: list[str],
+    granularities: list[str],
+    min_coverage_ratio: float,
+) -> tuple[dict[str, int], dict[str, dict[str, object]]]:
+    """Compute synchronized row-depth map by granularity for cross-symbol parity."""
+    by_granularity: dict[str, dict[str, int]] = {granularity: {} for granularity in granularities}
+    for row in dataset_snapshot:
+        symbol = str(row.get("symbol", "")).upper()
+        granularity = str(row.get("granularity", ""))
+        row_count = row.get("row_count")
+        if symbol and granularity in by_granularity and isinstance(row_count, int):
+            by_granularity[granularity][symbol] = int(row_count)
+
+    min_cov = float(min(max(min_coverage_ratio, 0.0), 1.0))
+    row_depth_map: dict[str, int] = {}
+    diagnostics: dict[str, dict[str, object]] = {}
+    for granularity in granularities:
+        counts = by_granularity.get(granularity, {})
+        available = len(counts)
+        expected = len(symbols)
+        coverage_ratio = float(available / max(expected, 1))
+        coverage_passed = coverage_ratio >= min_cov
+        target_depth = int(min(counts.values())) if counts and coverage_passed else None
+        if isinstance(target_depth, int) and target_depth > 0:
+            row_depth_map[granularity] = target_depth
+        diagnostics[granularity] = {
+            "available_symbols": available,
+            "expected_symbols": expected,
+            "coverage_ratio": coverage_ratio,
+            "min_coverage_ratio_required": min_cov,
+            "coverage_passed": bool(coverage_passed),
+            "target_row_depth": target_depth,
+        }
+    return row_depth_map, diagnostics
+
+
 def _sha256_file(path: Path) -> str:
     """Internal helper to compute sha256 file."""
     digest = hashlib.sha256()
@@ -238,8 +276,22 @@ def main() -> None:
         symbols=universe,
         granularities=granularities_for_run,
     )
+    sync_row_depth_map, sync_row_depth_diagnostics = _compute_sync_row_depth_map(
+        dataset_snapshot=dataset_snapshot,
+        symbols=universe,
+        granularities=granularities_for_run,
+        min_coverage_ratio=float(settings.train_sync_row_depth_min_coverage_ratio),
+    )
+    if bool(settings.train_sync_row_depth_enabled) and bool(settings.train_sync_row_depth_require_all_granularities):
+        missing = [granularity for granularity in granularities_for_run if granularity not in sync_row_depth_map]
+        if missing:
+            raise SystemExit(
+                "Synchronized row-depth map missing required granularities: "
+                + ",".join(sorted(missing))
+            )
     explicit_asof_map = _parse_int_map(args.asof_cutoff_map)
     asof_cutoff_map = explicit_asof_map if explicit_asof_map else (auto_asof_map if settings.train_asof_sync_enabled else {})
+    active_sync_row_depth_map = sync_row_depth_map if bool(settings.train_sync_row_depth_enabled) else {}
 
     aggregate: dict[str, object] = {
         "generated_at": datetime.now(tz=UTC).isoformat(),
@@ -254,6 +306,9 @@ def main() -> None:
         "asof_cutoff_map": asof_cutoff_map,
         "asof_sync_enabled": bool(settings.train_asof_sync_enabled),
         "asof_diagnostics": asof_diagnostics,
+        "sync_row_depth_enabled": bool(settings.train_sync_row_depth_enabled),
+        "sync_row_depth_map": active_sync_row_depth_map,
+        "sync_row_depth_diagnostics": sync_row_depth_diagnostics,
         "dataset_snapshot": {
             "db_path": str(db_path),
             "rows": dataset_snapshot,
@@ -269,6 +324,7 @@ def main() -> None:
             "classification_label_mode": settings.classification_label_mode,
             "triple_barrier_sigma_mult": float(settings.triple_barrier_sigma_mult),
             "high_confidence_threshold": float(settings.high_confidence_threshold),
+            "horizon_training_window": training_window_config_snapshot(),
         },
         "symbols": {},
         "phase_activation": {
@@ -308,6 +364,7 @@ def main() -> None:
                 models_root=models_root,
                 write_artifacts=True,
                 as_of_cutoff_by_granularity=asof_cutoff_map if asof_cutoff_map else None,
+                sync_row_depth_by_granularity=active_sync_row_depth_map if active_sync_row_depth_map else None,
             )
             symbol_result["horizons"][spec.label] = entry
 
@@ -350,6 +407,8 @@ def main() -> None:
         "selected_horizons": [spec.label for spec in horizon_specs],
         "excluded_symbol_horizons": sorted([f"{symbol}:{horizon}" for symbol, horizon in excluded_pairs]),
         "asof_cutoff_map": asof_cutoff_map,
+        "sync_row_depth_map": active_sync_row_depth_map,
+        "horizon_training_window": training_window_config_snapshot(),
         "dataset_snapshot_path": str((version_root / "dataset_manifest.json")),
     }
     version_manifest_path = version_root / "manifest.json"
@@ -386,6 +445,9 @@ def main() -> None:
         "db_path": str(db_path),
         "asof_cutoff_map": asof_cutoff_map,
         "asof_diagnostics": asof_diagnostics,
+        "sync_row_depth_enabled": bool(settings.train_sync_row_depth_enabled),
+        "sync_row_depth_map": active_sync_row_depth_map,
+        "sync_row_depth_diagnostics": sync_row_depth_diagnostics,
         "granularities": granularities_for_run,
         "rows": dataset_snapshot,
     }
@@ -413,6 +475,7 @@ def main() -> None:
             "artifact_manifest": str(artifact_manifest_path),
             "dataset_manifest": str(dataset_manifest_path),
             "near_pass_candidates": len(aggregate.get("near_pass_candidates", [])) if isinstance(aggregate.get("near_pass_candidates"), list) else None,
+            "sync_row_depth_enabled": bool(settings.train_sync_row_depth_enabled),
         },
     )
     print(

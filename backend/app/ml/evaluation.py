@@ -33,6 +33,123 @@ def _periods_per_year_from_horizon(horizon: str) -> float:
     return 365.0 * 24.0
 
 
+def _standard_normal_cdf(value: float) -> float:
+    """Approximate standard normal CDF for significance diagnostics."""
+    return 0.5 * (1.0 + math.erf(float(value) / math.sqrt(2.0)))
+
+
+def _observed_sharpe(values: np.ndarray) -> float:
+    """Compute non-annualized Sharpe from a return stream."""
+    arr = np.asarray(values, dtype=float)
+    sigma = float(np.std(arr))
+    if sigma <= 1e-12:
+        return 0.0
+    return float(np.mean(arr) / sigma)
+
+
+def _sample_skew(values: np.ndarray) -> float:
+    """Compute sample skew safely."""
+    arr = np.asarray(values, dtype=float)
+    sigma = float(np.std(arr))
+    if arr.size < 3 or sigma <= 1e-12:
+        return 0.0
+    centered = arr - float(np.mean(arr))
+    return float(np.mean((centered / sigma) ** 3))
+
+
+def _sample_excess_kurtosis(values: np.ndarray) -> float:
+    """Compute sample excess kurtosis safely."""
+    arr = np.asarray(values, dtype=float)
+    sigma = float(np.std(arr))
+    if arr.size < 4 or sigma <= 1e-12:
+        return 0.0
+    centered = arr - float(np.mean(arr))
+    return float(np.mean((centered / sigma) ** 4) - 3.0)
+
+
+def probabilistic_sharpe_ratio(values: np.ndarray, benchmark_sharpe: float = 0.0) -> float:
+    """Estimate the probability that observed Sharpe exceeds a benchmark Sharpe."""
+    arr = np.asarray(values, dtype=float)
+    n = int(arr.size)
+    if n < 30:
+        return math.nan
+    sr_hat = _observed_sharpe(arr)
+    skew = _sample_skew(arr)
+    excess_kurtosis = _sample_excess_kurtosis(arr)
+    denominator = 1.0 - (skew * sr_hat) + (((excess_kurtosis) / 4.0) * (sr_hat**2))
+    if denominator <= 1e-12:
+        return math.nan
+    z_score = ((sr_hat - float(benchmark_sharpe)) * math.sqrt(max(n - 1, 1))) / math.sqrt(denominator)
+    return float(np.clip(_standard_normal_cdf(z_score), 0.0, 1.0))
+
+
+def _execution_stream(
+    *,
+    current_close: np.ndarray,
+    target_close: np.ndarray,
+    direction_up: np.ndarray,
+    fee_bps: float,
+    slippage_bps: float,
+    max_turnover_per_step: float,
+    position_signal: np.ndarray | None = None,
+) -> dict[str, np.ndarray]:
+    """Build reusable execution return stream arrays for downstream summaries."""
+    current = np.asarray(current_close, dtype=float)
+    target = np.asarray(target_close, dtype=float)
+    signal = np.asarray(direction_up, dtype=int)
+    if current.size == 0 or current.size != target.size or signal.size != current.size:
+        return {
+            "raw_returns": np.array([], dtype=float),
+            "positions": np.array([], dtype=float),
+            "gross": np.array([], dtype=float),
+            "net": np.array([], dtype=float),
+            "turnover": np.array([], dtype=float),
+            "costs": np.array([], dtype=float),
+        }
+
+    raw_returns = (target / np.clip(current, 1e-12, None)) - 1.0
+    if position_signal is not None:
+        desired_positions = np.clip(np.asarray(position_signal, dtype=float), -1.0, 1.0)
+    else:
+        desired_positions = np.where(signal == 1, 1.0, -1.0)
+
+    max_turnover_per_step = float(np.clip(max_turnover_per_step, 0.0, 1.0))
+    max_position_delta = max_turnover_per_step * 2.0
+    positions = np.zeros_like(desired_positions, dtype=float)
+    for idx, desired in enumerate(desired_positions):
+        if idx == 0:
+            positions[idx] = float(np.clip(desired, -max_position_delta, max_position_delta))
+            continue
+        delta = desired - positions[idx - 1]
+        positions[idx] = positions[idx - 1] + float(np.clip(delta, -max_position_delta, max_position_delta))
+
+    gross = positions * raw_returns
+    prev_positions = np.concatenate(([0.0], positions[:-1]))
+    turnover = np.abs(positions - prev_positions) / 2.0
+    costs = turnover * ((float(fee_bps) + float(slippage_bps)) / 10000.0)
+    net = gross - costs
+    return {
+        "raw_returns": raw_returns,
+        "positions": positions,
+        "gross": gross,
+        "net": net,
+        "turnover": turnover,
+        "costs": costs,
+    }
+
+
+def _execution_summary(values: np.ndarray, horizon: str) -> tuple[float, float]:
+    """Summarize execution stream mean and annualized Sharpe."""
+    arr = np.asarray(values, dtype=float)
+    mean_return = float(np.mean(arr)) if arr.size else math.nan
+    sigma = float(np.std(arr)) if arr.size else math.nan
+    if not arr.size or not math.isfinite(sigma) or sigma <= 1e-12:
+        sharpe = 0.0 if arr.size else math.nan
+    else:
+        sharpe = float((mean_return / sigma) * math.sqrt(max(_periods_per_year_from_horizon(horizon), 1.0)))
+    return mean_return, sharpe
+
+
 def walk_forward_splits(
     n_samples: int,
     folds: int = 4,
@@ -161,10 +278,19 @@ def execution_aware_metrics(
     position_signal: np.ndarray | None = None,
 ) -> dict[str, float]:
     """Compute execution aware metrics."""
-    current = np.asarray(current_close, dtype=float)
-    target = np.asarray(target_close, dtype=float)
-    signal = np.asarray(direction_up, dtype=int)
-    if current.size == 0 or current.size != target.size or signal.size != current.size:
+    stream = _execution_stream(
+        current_close=current_close,
+        target_close=target_close,
+        direction_up=direction_up,
+        fee_bps=fee_bps,
+        slippage_bps=slippage_bps,
+        max_turnover_per_step=max_turnover_per_step,
+        position_signal=position_signal,
+    )
+    net = stream["net"]
+    gross = stream["gross"]
+    turnover = stream["turnover"]
+    if net.size == 0:
         return {
             "gross_mean_return": math.nan,
             "net_mean_return": math.nan,
@@ -174,39 +300,13 @@ def execution_aware_metrics(
             "max_drawdown_net": math.nan,
             "var95_net": math.nan,
             "cvar95_net": math.nan,
+            "sample_count": 0.0,
+            "net_std": math.nan,
+            "probabilistic_sharpe_gt_zero": math.nan,
         }
-
-    raw_returns = (target / np.clip(current, 1e-12, None)) - 1.0
-    if position_signal is not None:
-        desired_positions = np.clip(np.asarray(position_signal, dtype=float), -1.0, 1.0)
-    else:
-        desired_positions = np.where(signal == 1, 1.0, -1.0)
-    # Turnover cap is converted into max position delta per step.
-    max_turnover_per_step = float(np.clip(max_turnover_per_step, 0.0, 1.0))
-    max_position_delta = max_turnover_per_step * 2.0
-    positions = np.zeros_like(desired_positions, dtype=float)
-    for idx, desired in enumerate(desired_positions):
-        if idx == 0:
-            positions[idx] = float(np.clip(desired, -max_position_delta, max_position_delta))
-            continue
-        delta = desired - positions[idx - 1]
-        positions[idx] = positions[idx - 1] + float(np.clip(delta, -max_position_delta, max_position_delta))
-    gross = positions * raw_returns
-
-    prev_positions = np.concatenate(([0.0], positions[:-1]))
-    turnover = np.abs(positions - prev_positions) / 2.0
-    turnover_rate = float(np.mean(turnover))
-    trading_cost = turnover * ((float(fee_bps) + float(slippage_bps)) / 10000.0)
-    net = gross - trading_cost
-
-    def _sharpe(values: np.ndarray) -> float:
-        """Internal helper to compute sharpe."""
-        mu = float(np.mean(values))
-        sigma = float(np.std(values))
-        if sigma <= 1e-12:
-            return 0.0
-        return float((mu / sigma) * math.sqrt(max(_periods_per_year_from_horizon(horizon), 1.0)))
-
+    gross_mean, sharpe_gross = _execution_summary(gross, horizon)
+    net_mean, sharpe_net = _execution_summary(net, horizon)
+    turnover_rate = float(np.mean(turnover)) if turnover.size else math.nan
     equity = np.cumprod(1.0 + net)
     running_max = np.maximum.accumulate(equity)
     drawdown = (equity / np.clip(running_max, 1e-12, None)) - 1.0
@@ -216,14 +316,17 @@ def execution_aware_metrics(
     cvar95 = float(np.mean(left_tail)) if left_tail.size else q95
 
     return {
-        "gross_mean_return": float(np.mean(gross)),
-        "net_mean_return": float(np.mean(net)),
+        "gross_mean_return": gross_mean,
+        "net_mean_return": net_mean,
         "turnover_rate": turnover_rate,
-        "sharpe_gross": _sharpe(gross),
-        "sharpe_net": _sharpe(net),
+        "sharpe_gross": sharpe_gross,
+        "sharpe_net": sharpe_net,
         "max_drawdown_net": float(np.min(drawdown)),
         "var95_net": q95,
         "cvar95_net": cvar95,
+        "sample_count": float(net.size),
+        "net_std": float(np.std(net)),
+        "probabilistic_sharpe_gt_zero": probabilistic_sharpe_ratio(net, benchmark_sharpe=0.0),
     }
 
 
@@ -382,36 +485,24 @@ def paper_trading_metrics(
     position_signal: np.ndarray | None = None,
 ) -> dict[str, float]:
     """Compute paper trading metrics."""
-    current = np.asarray(current_close, dtype=float)
-    target = np.asarray(target_close, dtype=float)
-    signal = np.asarray(direction_up, dtype=int)
-    if current.size == 0 or current.size != target.size or signal.size != current.size:
+    stream = _execution_stream(
+        current_close=current_close,
+        target_close=target_close,
+        direction_up=direction_up,
+        fee_bps=fee_bps,
+        slippage_bps=slippage_bps,
+        max_turnover_per_step=max_turnover_per_step,
+        position_signal=position_signal,
+    )
+    net = stream["net"]
+    turnover = stream["turnover"]
+    if net.size == 0:
         return {
             "enabled": False,
             "reason": "invalid_inputs",
         }
 
     start_capital = max(float(initial_capital), 100.0)
-    max_turnover_per_step = float(np.clip(max_turnover_per_step, 0.0, 1.0))
-    max_position_delta = max_turnover_per_step * 2.0
-    if position_signal is not None:
-        desired_positions = np.clip(np.asarray(position_signal, dtype=float), -1.0, 1.0).astype(float)
-    else:
-        desired_positions = np.where(signal == 1, 1.0, -1.0).astype(float)
-    positions = np.zeros_like(desired_positions, dtype=float)
-    for idx, desired in enumerate(desired_positions):
-        if idx == 0:
-            positions[idx] = float(np.clip(desired, -max_position_delta, max_position_delta))
-            continue
-        delta = desired - positions[idx - 1]
-        positions[idx] = positions[idx - 1] + float(np.clip(delta, -max_position_delta, max_position_delta))
-
-    realized_returns = (target / np.clip(current, 1e-12, None)) - 1.0
-    gross = positions * realized_returns
-    prev_positions = np.concatenate(([0.0], positions[:-1]))
-    turnover = np.abs(positions - prev_positions) / 2.0
-    costs = turnover * ((float(fee_bps) + float(slippage_bps)) / 10000.0)
-    net = gross - costs
 
     equity = np.empty_like(net, dtype=float)
     running = start_capital
@@ -444,3 +535,78 @@ def paper_trading_metrics(
         "var95": q95,
         "cvar95": cvar95,
     }
+
+
+def execution_stress_metrics(
+    *,
+    current_close: np.ndarray,
+    target_close: np.ndarray,
+    direction_up: np.ndarray,
+    horizon: str,
+    fee_bps: float,
+    slippage_bps: float,
+    max_turnover_per_step: float,
+    initial_capital: float,
+    position_signal: np.ndarray | None = None,
+) -> dict[str, dict[str, object]]:
+    """Evaluate the same signal under harsher execution assumptions."""
+    scenario_defs = {
+        "cost_x2": {
+            "fee_bps": float(fee_bps) * 2.0,
+            "slippage_bps": float(slippage_bps) * 2.0,
+            "max_turnover_per_step": float(max_turnover_per_step),
+        },
+        "cost_x3": {
+            "fee_bps": float(fee_bps) * 3.0,
+            "slippage_bps": float(slippage_bps) * 3.0,
+            "max_turnover_per_step": float(max_turnover_per_step),
+        },
+        "latency_shock": {
+            "fee_bps": float(fee_bps),
+            "slippage_bps": max(float(slippage_bps) * 4.0, float(slippage_bps) + 10.0),
+            "max_turnover_per_step": float(max_turnover_per_step) * 0.75,
+        },
+        "liquidity_crunch": {
+            "fee_bps": max(float(fee_bps) * 2.0, float(fee_bps) + 4.0),
+            "slippage_bps": max(float(slippage_bps) * 6.0, float(slippage_bps) + 18.0),
+            "max_turnover_per_step": float(max_turnover_per_step) * 0.50,
+        },
+    }
+    out: dict[str, dict[str, object]] = {}
+    for name, scenario in scenario_defs.items():
+        execution = execution_aware_metrics(
+            current_close=current_close,
+            target_close=target_close,
+            direction_up=direction_up,
+            horizon=horizon,
+            fee_bps=float(scenario["fee_bps"]),
+            slippage_bps=float(scenario["slippage_bps"]),
+            max_turnover_per_step=float(scenario["max_turnover_per_step"]),
+            position_signal=position_signal,
+        )
+        paper = paper_trading_metrics(
+            current_close=current_close,
+            target_close=target_close,
+            direction_up=direction_up,
+            fee_bps=float(scenario["fee_bps"]),
+            slippage_bps=float(scenario["slippage_bps"]),
+            max_turnover_per_step=float(scenario["max_turnover_per_step"]),
+            initial_capital=float(initial_capital),
+            position_signal=position_signal,
+        )
+        survives_basic_gate = bool(
+            float(execution.get("net_mean_return", math.nan)) > 0.0
+            and float(execution.get("sharpe_net", math.nan)) > 0.0
+            and float(paper.get("max_drawdown", math.nan)) >= -0.45
+        )
+        out[name] = {
+            "scenario": {
+                "fee_bps": float(scenario["fee_bps"]),
+                "slippage_bps": float(scenario["slippage_bps"]),
+                "max_turnover_per_step": float(np.clip(float(scenario["max_turnover_per_step"]), 0.0, 1.0)),
+            },
+            "execution": execution,
+            "paper": paper,
+            "survives_basic_gate": survives_basic_gate,
+        }
+    return out

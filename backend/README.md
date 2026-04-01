@@ -38,6 +38,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - `GET /api/v1/health/data-readiness` latest data-quality snapshot for training gate readiness
 - `GET /api/v1/health/source-health?hours=24` source reliability telemetry summary
 - `GET /api/v1/health/model-scorecard` latest model scorecard snapshot
+- `GET /api/v1/health/robust-validation` latest robust-validation bundle for the active model
+- `GET /api/v1/health/shadow-trading` latest live shadow-trading summary
 - `GET /api/v1/markets/symbols?quote=USD` tradable symbols catalog
 - `GET /api/v1/market-data/candles?symbol=BTC-USD&granularity=1h&limit=200` OHLCV candles
 - `GET /api/v1/market-data/ticker?symbol=BTC-USD` latest ticker
@@ -80,8 +82,19 @@ python scripts/backfill_market_data.py \
   --symbols BTC-USD,ETH-USD,SOL-USD \
   --granularities 1m,5m,15m,1h,6h,1d \
   --target-rows-map 1m:30000,5m:18000,15m:12000,1h:6000,6h:2500,1d:1500 \
+  --deep-history \
+  --deep-history-max-limit-map 1m:60000,5m:30000,15m:20000,1h:15000,6h:12000,1d:5000 \
   --max-passes 3 \
   --output reports/backfill_market_data.json
+```
+
+Generate archive completeness report after deep backfill:
+
+```bash
+python scripts/history_completeness_report.py \
+  --symbols BTC-USD,ETH-USD,SOL-USD \
+  --granularities 1m,5m,15m,1h,6h,1d \
+  --output reports/history_completeness_report.json
 ```
 
 Generate data quality report:
@@ -172,6 +185,8 @@ Optional training controls:
 - `--exclude-symbol-horizons BTC-USD:6h,ETH-USD:1d` to skip specific pairs
 - `--asof-cutoff-map 1m:1772559060,1h:1772557200` for explicit synchronized cutoffs
 - when `TRAIN_ASOF_SYNC_ENABLED=true`, cutoffs are auto-derived per granularity from dataset coverage
+- when `TRAIN_SYNC_ROW_DEPTH_ENABLED=true`, each granularity is truncated to synchronized trailing row-depth parity before feature generation
+- when `TRAIN_HORIZON_WINDOWING_ENABLED=true`, each horizon is trained on a recent capped tail so stale launch-era regimes do not dominate short/medium horizon models
 
 Training targets horizons:
 
@@ -210,6 +225,27 @@ Promotion gate (must pass all):
 - leakage diagnostics must pass
 - walk-forward strict mode must pass when enabled
 - martingale diagnostic `abs(residual_acf1) <= 0.10` when `MARTINGALE_GATE_MODE=strict`
+
+Financial baseline policy (strict + fair):
+
+- default comparator is fixed (`FINANCIAL_BASELINE_SELECTION_MODE=fixed`, `FINANCIAL_BASELINE_STRATEGY=always_long`)
+- optional modes:
+  - `best_validation`: choose baseline strategy on validation window, evaluate on test window
+  - `best_expost`: choose strongest baseline on test window (diagnostic only, strictest comparator)
+- this avoids look-ahead/oracle bias in default promotion comparisons
+
+Returns tuning (pre-gate optimization):
+
+- when `RETURNS_TUNING_ENABLED=true`, training performs validation-time joint tuning of:
+  - classifier decision threshold
+  - edge filter threshold scale
+  - trade direction policy (`RETURNS_TUNING_POLICIES`)
+  - position-size multiplier (`RETURNS_TUNING_POSITION_SCALE_CANDIDATES`)
+- tuned runtime choices are persisted in calibration/metrics artifacts:
+  - `decision_threshold`
+  - `edge_threshold_scale`
+  - `trade_direction_policy`
+  - `position_scale`
 
 Training reports additionally include:
 
@@ -296,6 +332,9 @@ Reports:
 - per-symbol reports: `backend/reports/symbols/<symbol>.json`
 - aggregate report: `backend/reports/summary_report.json`
 - promotion report: `backend/reports/promotion_report.json`
+- robust validation bundle: `backend/reports/robust_validation_<model_version>.json`
+- shadow trading report: `backend/reports/shadow_report_latest.json`
+- robust validation now requires model-matched shadow evidence and emits JSON-safe nulls instead of `NaN` tokens
 
 ## Retraining Cadence
 
@@ -337,9 +376,18 @@ Reports:
   - `PROMOTION_REQUIRE_CLASSIFICATION_EDGE=false`
   - `PROMOTION_REQUIRE_REGRESSION_EDGE=false`
   - `PROMOTION_MIN_SHARPE_NET=0.0`
+  - `FINANCIAL_BASELINE_SELECTION_MODE=fixed|best_validation|best_expost`
+  - `FINANCIAL_BASELINE_STRATEGY=always_long|vol_targeted_momentum|vol_targeted_mean_reversion|vol_targeted_kalman_trend`
   - `POSITION_TARGET_ANNUAL_VOL=0.35`
   - `POSITION_MAX_LEVERAGE=1.0`
   - `TRADE_EDGE_UNCERTAINTY_BUFFER_MULT=1.0`
+  - `EDGE_ACTION_MIN_TAKE_RATE=0.05`
+  - `EDGE_ACTION_COST_RELAX_MULT=0.50`
+  - `EDGE_ACTION_THRESHOLD_SCALE=1.0`
+  - `TRADE_DIRECTION_POLICY=auto|long_flat|long_only|long_short|short_only`
+  - `RETURNS_TUNING_ENABLED=true`
+  - `RETURNS_TUNING_POLICIES=long_flat,long_short,long_only`
+  - `RETURNS_TUNING_POSITION_SCALE_CANDIDATES=0.5,0.75,1.0,1.25,1.5`
   - `MODEL_CANDIDATE_MODE=theory|expanded`
   - `MODEL_ENABLE_ENSEMBLE_CHALLENGER=true`
   - `ALPHA_KILL_SWITCH_ENABLED=true`
@@ -349,6 +397,15 @@ Reports:
   - `ALPHA_KILL_MIN_SIGN_ALIGNMENT=0.51`
   - `ALPHA_KILL_MIN_SURVIVAL_RATIO=0.50`
   - `TRAIN_ASOF_SYNC_ENABLED=true`
+  - `TRAIN_SYNC_ROW_DEPTH_ENABLED=true`
+  - `TRAIN_SYNC_ROW_DEPTH_MIN_COVERAGE_RATIO=1.0`
+  - `TRAIN_SYNC_ROW_DEPTH_REQUIRE_ALL_GRANULARITIES=true`
+  - `TRAIN_HORIZON_WINDOWING_ENABLED=true`
+  - `TRAIN_HORIZON_WINDOW_ROWS_MAP=5m:12000,1h:12000,3h:11000,6h:9000,12h:8000,1d:7000,1w:5000,1mo:3500,3mo:2500`
+  - `SHADOW_CHAMPION_PATH=data/models/shadow_champion.json`
+  - `SHADOW_PREDICTIONS_PATH=reports/shadow_predictions.jsonl`
+  - `SHADOW_REPORT_PATH=reports/shadow_report_latest.json`
+  - `SHADOW_SETTLEMENT_GRACE_SECONDS=300`
   - `METRIC_CI_BOOTSTRAP_SAMPLES=400`
   - `METRIC_CI_LEVEL=0.95`
 - Flow:
@@ -362,6 +419,8 @@ Reports:
 ```bash
 python scripts/daily_retrain.py --phase phase3
 ```
+
+Every successful retrain now also emits a robust-validation bundle for the post-promotion active model.
 
 Phase-1 strict startup run (core symbols + core horizons + gates):
 
@@ -386,7 +445,10 @@ Outputs:
 - `backend/reports/daily_retrain_<model_version>.json`
 - `backend/reports/summary_report_<model_version>.json`
 - `backend/reports/promotion_report_<model_version>.json`
+- `backend/reports/hypothesis_report_<model_version>.json`
+- `backend/reports/oos_validation_<model_version>.json`
 - `backend/reports/scorecard_<model_version>.json`
+- `backend/reports/robust_validation_<active_model_version>.json`
 - `docs/model-cards/<model_version>.md`
 
 Additional operations scripts:
@@ -406,13 +468,13 @@ Bundle output includes command traces, settings snapshot, report checksums, and 
 ### Continuous Near-Promotion Loop (hourly-friendly)
 
 ```bash
-python scripts/near_promotion_retrain.py --phase phase3 --skip-ingest --symbols BTC-USD,ETH-USD,SOL-USD --max-pairs 6
+python scripts/near_promotion_retrain.py --phase phase3 --symbols BTC-USD,ETH-USD,SOL-USD --max-pairs 6
 ```
 
 Single-pair sequential run:
 
 ```bash
-python scripts/near_promotion_retrain.py --phase phase3 --skip-ingest --target-pairs BTC-USD:1h
+python scripts/near_promotion_retrain.py --phase phase3 --target-pairs BTC-USD:1h
 ```
 
 Optional near-pass soft-promotion controls (pair-by-pair operations):
@@ -420,7 +482,6 @@ Optional near-pass soft-promotion controls (pair-by-pair operations):
 ```bash
 python scripts/near_promotion_retrain.py \
   --phase phase3 \
-  --skip-ingest \
   --target-pairs ETH-USD:6h \
   --soft-promote-f1-delta-min -0.015 \
   --soft-promote-accuracy-delta-min -0.01 \
@@ -433,10 +494,15 @@ Behavior:
 - retrains only selected near-promotion symbol+horizon pairs
 - carries forward previously promoted symbol+horizon artifacts into the candidate version (copy/retrain) so active promoted pairs never lose artifact availability
 - runs `promote_model.py --merge-existing` so previously promoted pairs remain active
+- reuses the full symbol/horizon summary tree format so downstream validation tooling can evaluate incremental candidate versions
 - writes:
   - `backend/reports/summary_report_<model_version>.json`
   - `backend/reports/promotion_report_<model_version>.json`
   - `backend/reports/near_promotion_<model_version>.json`
+  - `backend/reports/hypothesis_report_<model_version>.json`
+  - `backend/reports/oos_validation_<model_version>.json`
+  - `backend/reports/scorecard_<model_version>.json`
+  - `backend/reports/robust_validation_<active_model_version>.json`
 
 ## Institutional Evaluation Additions
 
@@ -450,7 +516,7 @@ Per symbol/horizon metrics artifacts now include:
 - paper-trading metrics (cost-adjusted PnL and tail risk)
 - portfolio risk metrics (`VaR`, `CVaR`, `max_drawdown`) from execution-aware return stream
 
-`WALK_FORWARD_GATE_MODE=strict` enforces walk-forward strict pass as part of promotion gate.
+`WALK_FORWARD_GATE_MODE=strict` now acts as the default promotion posture, and `promote_model.py` rejects new candidate artifacts that only have diagnostic walk-forward metadata.
 
 ## Experiment Tracking and Rollback Guard
 
@@ -477,7 +543,33 @@ python scripts/auto_rollback_guard.py --hours 24 --max-stale-cache-ratio 0.35 --
 
 Automation helper:
 
-- `backend/scripts/run_daily_retrain.sh` runs the near-promotion loop with thread caps and `--skip-ingest` for stable hourly operation on local machines.
+- `backend/scripts/run_daily_retrain.sh` runs the near-promotion loop with thread caps and an ingestion-first flow so each scheduled cycle refreshes candles before retraining.
+
+### Frozen champion shadow trading
+
+Freeze the current active model for live shadow validation:
+
+```bash
+python scripts/freeze_shadow_champion.py
+```
+
+Capture live shadow predictions from the frozen champion:
+
+```bash
+python scripts/shadow_trading.py capture
+```
+
+Settle matured predictions once the target horizon has elapsed:
+
+```bash
+python scripts/shadow_trading.py settle
+```
+
+Aggregate the settled rows into a shadow report:
+
+```bash
+python scripts/shadow_trading.py report
+```
 
 ### macOS cron example (daily 2:00 AM local time)
 

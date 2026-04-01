@@ -46,6 +46,7 @@ from app.ml.evaluation import (
     bootstrap_metric_confidence_intervals,
     choose_threshold_walk_forward,
     execution_aware_metrics,
+    execution_stress_metrics,
     paper_trading_metrics,
     strict_gate_walk_forward_diagnostic,
     walk_forward_splits,
@@ -82,6 +83,17 @@ HORIZON_MIN_SAMPLES: dict[str, int] = {
     "1w": 180,
     "1mo": 140,
     "3mo": 120,
+}
+DEFAULT_TRAIN_HORIZON_WINDOW_ROWS: dict[str, int] = {
+    "5m": 12000,
+    "1h": 12000,
+    "3h": 11000,
+    "6h": 9000,
+    "12h": 8000,
+    "1d": 7000,
+    "1w": 5000,
+    "1mo": 3500,
+    "3mo": 2500,
 }
 HORIZON_LOG_RETURN_CLIP: dict[str, float] = {
     "5m": 0.08,
@@ -162,6 +174,18 @@ class CandidateResult:
 
 
 @dataclass(frozen=True)
+class ResolvedHorizonData:
+    granularity: str
+    steps_ahead: int
+    frame: pd.DataFrame
+    archive_rows_before_window: int
+    archive_start_time: int | None
+    archive_end_time: int | None
+    horizon_window_rows_limit: int | None
+    horizon_window_trim_applied: bool
+
+
+@dataclass(frozen=True)
 class ClassifierValidationCandidate:
     model_name: str
     model: object
@@ -183,6 +207,16 @@ class MetaLabelingResult:
     val_net_mean_return: float
     val_max_drawdown: float
     reason: str | None = None
+
+
+@dataclass(frozen=True)
+class ReturnsTuningResult:
+    decision_threshold: float
+    edge_threshold_scale: float
+    direction_policy: str
+    position_scale: float
+    objective: float
+    diagnostics: dict[str, object]
 
 
 class ProbabilityBlendClassifier:
@@ -308,6 +342,66 @@ def load_candles(symbol: str, granularity: str, as_of_start_time: int | None = N
     return frame
 
 
+def _parse_horizon_rows_map(raw: str, fallback: dict[str, int]) -> dict[str, int]:
+    """Parse horizon-to-row-limit configuration text."""
+    parsed = dict(fallback)
+    valid_horizons = {spec.label for spec in HORIZON_SPECS}
+    for token in raw.split(","):
+        item = token.strip()
+        if not item or ":" not in item:
+            continue
+        key_raw, value_raw = item.split(":", 1)
+        key = key_raw.strip().lower()
+        try:
+            value = int(value_raw.strip())
+        except ValueError:
+            continue
+        if key in valid_horizons and value > 0:
+            parsed[key] = value
+    return parsed
+
+
+def horizon_training_window_rows_map() -> dict[str, int]:
+    """Resolve horizon-specific recent-window row caps from settings."""
+    settings = get_settings()
+    return _parse_horizon_rows_map(settings.train_horizon_window_rows_map, DEFAULT_TRAIN_HORIZON_WINDOW_ROWS)
+
+
+def training_window_config_snapshot() -> dict[str, object]:
+    """Expose current horizon-window configuration for reports/manifests."""
+    settings = get_settings()
+    rows_map = horizon_training_window_rows_map()
+    return {
+        "enabled": bool(settings.train_horizon_windowing_enabled),
+        "rows_map": {key: int(value) for key, value in rows_map.items()},
+    }
+
+
+def _apply_horizon_training_window(
+    frame: pd.DataFrame,
+    *,
+    horizon: str,
+    required_rows: int,
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    """Trim to a horizon-specific recent window while preserving minimum training depth."""
+    settings = get_settings()
+    rows_map = horizon_training_window_rows_map()
+    configured_limit = int(rows_map.get(horizon, 0))
+    minimum_safe_rows = max(int(required_rows), 1)
+    effective_limit = max(configured_limit, minimum_safe_rows) if configured_limit > 0 else minimum_safe_rows
+    archive_rows = int(len(frame))
+    trim_applied = bool(settings.train_horizon_windowing_enabled) and archive_rows > effective_limit
+    trimmed = frame.tail(effective_limit).reset_index(drop=True) if trim_applied else frame.reset_index(drop=True)
+    return trimmed, {
+        "enabled": bool(settings.train_horizon_windowing_enabled),
+        "configured_rows_limit": configured_limit if configured_limit > 0 else None,
+        "effective_rows_limit": int(effective_limit),
+        "archive_rows_before_window": archive_rows,
+        "rows_after_window": int(len(trimmed)),
+        "trim_applied": trim_applied,
+    }
+
+
 def list_symbols_with_any_candles(min_rows: int = 100) -> list[str]:
     """List symbols with any candles."""
     with _connect() as conn:
@@ -387,7 +481,7 @@ def _signal_quality_metrics(oriented_signal: np.ndarray, target_return: np.ndarr
     return ic, decile_spread_bps, alignment
 
 
-def _alpha_kill_decisions(frame: pd.DataFrame, selected_features: list[str]) -> tuple[list[str], dict[str, object]]:
+def _alpha_kill_decisions(frame: pd.DataFrame, selected_features: list[str], horizon: str) -> tuple[list[str], dict[str, object]]:
     """Apply rolling alpha-signal kill rules and return active feature list."""
     settings = get_settings()
     if not bool(settings.alpha_kill_switch_enabled):
@@ -414,6 +508,21 @@ def _alpha_kill_decisions(frame: pd.DataFrame, selected_features: list[str]) -> 
     min_spread = float(settings.alpha_kill_min_decile_spread_bps)
     min_align = float(settings.alpha_kill_min_sign_alignment)
     min_survival = float(np.clip(settings.alpha_kill_min_survival_ratio, 0.0, 1.0))
+    require_financial_pass = bool(settings.alpha_kill_require_financial_pass)
+    min_net_mean_return = float(settings.alpha_kill_min_signal_net_mean_return)
+    min_sharpe_net = float(settings.alpha_kill_min_signal_sharpe_net)
+    max_drawdown_limit = float(settings.alpha_kill_max_signal_drawdown_limit)
+    fee_bps = float(settings.execution_fee_bps)
+    slippage_bps = float(settings.execution_slippage_bps)
+    max_turnover_per_step = float(settings.execution_max_turnover_per_step)
+    initial_capital = float(settings.paper_trade_initial_capital)
+
+    def _signal_position(signal_values: np.ndarray) -> np.ndarray:
+        """Scale raw signal into bounded tradable positions."""
+        magnitude = np.asarray(signal_values, dtype=float)
+        scale = float(np.nanpercentile(np.abs(magnitude), 75)) if magnitude.size else 0.0
+        scale = max(scale, 1e-6)
+        return np.clip(np.tanh(magnitude / scale), -1.0, 1.0)
 
     for feature in alpha_features:
         direction = float(ALPHA_SIGNAL_DIRECTIONS[feature])
@@ -430,20 +539,72 @@ def _alpha_kill_decisions(frame: pd.DataFrame, selected_features: list[str]) -> 
             if int(np.sum(mask)) < 25:
                 continue
             total_windows += 1
-            ic, spread_bps, align = _signal_quality_metrics(sig_w[mask], ret_w[mask])
-            pass_window = (
+            sig_valid = sig_w[mask]
+            ret_valid = ret_w[mask]
+            current_valid = current[window][mask]
+            target_valid = target[window][mask]
+            ic, spread_bps, align = _signal_quality_metrics(sig_valid, ret_valid)
+            stat_pass = (
                 (math.isfinite(ic) and ic >= min_ic)
                 and (math.isfinite(spread_bps) and spread_bps >= min_spread)
                 and (math.isfinite(align) and align >= min_align)
             )
+            positions = _signal_position(sig_valid)
+            direction_up = (positions >= 0).astype(int)
+            execution = execution_aware_metrics(
+                current_close=current_valid,
+                target_close=target_valid,
+                direction_up=direction_up,
+                horizon=horizon,
+                fee_bps=fee_bps,
+                slippage_bps=slippage_bps,
+                max_turnover_per_step=max_turnover_per_step,
+                position_signal=positions,
+            )
+            paper = paper_trading_metrics(
+                current_close=current_valid,
+                target_close=target_valid,
+                direction_up=direction_up,
+                fee_bps=fee_bps,
+                slippage_bps=slippage_bps,
+                max_turnover_per_step=max_turnover_per_step,
+                initial_capital=initial_capital,
+                position_signal=positions,
+            )
+            net_mean_return = float(execution.get("net_mean_return", math.nan))
+            sharpe_net = float(execution.get("sharpe_net", math.nan))
+            max_drawdown = float(paper.get("max_drawdown", math.nan))
+            financial_pass = (
+                math.isfinite(net_mean_return)
+                and math.isfinite(sharpe_net)
+                and math.isfinite(max_drawdown)
+                and (net_mean_return >= min_net_mean_return)
+                and (sharpe_net >= min_sharpe_net)
+                and (max_drawdown >= max_drawdown_limit)
+            )
+            pass_window = bool(stat_pass and (financial_pass if require_financial_pass else True))
             if pass_window:
                 window_pass += 1
+            financial_failed_reasons: list[str] = []
+            if require_financial_pass:
+                if not (math.isfinite(net_mean_return) and net_mean_return >= min_net_mean_return):
+                    financial_failed_reasons.append("net_mean_return_below_threshold")
+                if not (math.isfinite(sharpe_net) and sharpe_net >= min_sharpe_net):
+                    financial_failed_reasons.append("sharpe_net_below_threshold")
+                if not (math.isfinite(max_drawdown) and max_drawdown >= max_drawdown_limit):
+                    financial_failed_reasons.append("drawdown_below_limit")
             window_rows.append(
                 {
                     "window_samples": float(np.sum(mask)),
                     "ic": ic,
                     "decile_spread_bps": spread_bps,
                     "sign_alignment": align,
+                    "net_mean_return": net_mean_return,
+                    "sharpe_net": sharpe_net,
+                    "max_drawdown": max_drawdown,
+                    "stat_pass": float(1.0 if stat_pass else 0.0),
+                    "financial_pass": float(1.0 if financial_pass else 0.0),
+                    "financial_failed_reasons": financial_failed_reasons,
                     "pass": float(1.0 if pass_window else 0.0),
                 }
             )
@@ -461,6 +622,12 @@ def _alpha_kill_decisions(frame: pd.DataFrame, selected_features: list[str]) -> 
                 "passed_windows": float(window_pass),
                 "survival_ratio": float(survival_ratio),
                 "min_required_survival_ratio": float(min_survival),
+                "financial_gate_enabled": bool(require_financial_pass),
+                "financial_thresholds": {
+                    "min_net_mean_return": float(min_net_mean_return),
+                    "min_sharpe_net": float(min_sharpe_net),
+                    "max_drawdown_limit": float(max_drawdown_limit),
+                },
                 "kept": bool(keep),
                 "windows": window_rows,
             }
@@ -632,7 +799,8 @@ def resolve_horizon_data(
     spec: HorizonSpec,
     min_samples: int | None = None,
     as_of_cutoff_by_granularity: dict[str, int] | None = None,
-) -> tuple[str, int, pd.DataFrame] | None:
+    sync_row_depth_by_granularity: dict[str, int] | None = None,
+) -> ResolvedHorizonData | None:
     """Resolve horizon data."""
     required = min_samples if min_samples is not None else min_samples_for_horizon(spec.label)
     for granularity, steps in spec.candidates:
@@ -640,8 +808,35 @@ def resolve_horizon_data(
         if isinstance(as_of_cutoff_by_granularity, dict) and granularity in as_of_cutoff_by_granularity:
             as_of = int(as_of_cutoff_by_granularity[granularity])
         candidate = load_candles(symbol, granularity, as_of_start_time=as_of)
-        if len(candidate) >= (required + steps + LOOKBACK_BUFFER):
-            return granularity, steps, candidate
+        if isinstance(sync_row_depth_by_granularity, dict) and granularity in sync_row_depth_by_granularity:
+            sync_rows = int(sync_row_depth_by_granularity[granularity])
+            if sync_rows > 0:
+                # Enforce cross-symbol parity by training on the synchronized trailing depth.
+                candidate = candidate.tail(sync_rows).reset_index(drop=True)
+        archive_rows_before_window = int(len(candidate))
+        archive_start_time = int(candidate["start_time"].iloc[0]) if archive_rows_before_window else None
+        archive_end_time = int(candidate["start_time"].iloc[-1]) if archive_rows_before_window else None
+        required_rows = required + steps + LOOKBACK_BUFFER
+        candidate, window_meta = _apply_horizon_training_window(
+            candidate,
+            horizon=spec.label,
+            required_rows=required_rows,
+        )
+        if len(candidate) >= required_rows:
+            return ResolvedHorizonData(
+                granularity=granularity,
+                steps_ahead=steps,
+                frame=candidate,
+                archive_rows_before_window=archive_rows_before_window,
+                archive_start_time=archive_start_time,
+                archive_end_time=archive_end_time,
+                horizon_window_rows_limit=(
+                    int(window_meta["effective_rows_limit"])
+                    if isinstance(window_meta.get("effective_rows_limit"), int)
+                    else None
+                ),
+                horizon_window_trim_applied=bool(window_meta.get("trim_applied")),
+            )
     return None
 
 
@@ -672,7 +867,7 @@ def _prepare_supervised(df: pd.DataFrame, horizon: str, steps_ahead: int, min_sa
     if len(enriched) < min_samples:
         return None
 
-    active_features, alpha_kill_diagnostics = _alpha_kill_decisions(enriched, selected_features)
+    active_features, alpha_kill_diagnostics = _alpha_kill_decisions(enriched, selected_features, horizon=horizon)
     if not active_features:
         return None
 
@@ -1646,8 +1841,18 @@ def _confidence_slice_metrics(y_true_cls: np.ndarray, y_pred_cls: np.ndarray, y_
     }
 
 
-def _regime_metrics(split: SplitData, y_pred_cls: np.ndarray) -> dict[str, dict[str, float]]:
-    """Internal helper to compute regime metrics."""
+def _regime_metrics(
+    *,
+    split: SplitData,
+    y_pred_cls: np.ndarray,
+    horizon: str,
+    position_signal: np.ndarray,
+    fee_bps: float,
+    slippage_bps: float,
+    max_turnover_per_step: float,
+    initial_capital: float,
+) -> dict[str, dict[str, float | dict[str, float]]]:
+    """Compute classification and conditional financial diagnostics by regime."""
     if split.x_test.empty:
         return {}
 
@@ -1663,10 +1868,34 @@ def _regime_metrics(split: SplitData, y_pred_cls: np.ndarray) -> dict[str, dict[
         count = int(np.sum(mask))
         if count == 0:
             continue
+        execution = execution_aware_metrics(
+            current_close=split.current_close_test[mask],
+            target_close=split.target_close_test[mask],
+            direction_up=y_pred_cls[mask],
+            horizon=horizon,
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
+            max_turnover_per_step=max_turnover_per_step,
+            position_signal=np.asarray(position_signal, dtype=float)[mask],
+        )
+        paper = paper_trading_metrics(
+            current_close=split.current_close_test[mask],
+            target_close=split.target_close_test[mask],
+            direction_up=y_pred_cls[mask],
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
+            max_turnover_per_step=max_turnover_per_step,
+            initial_capital=initial_capital,
+            position_signal=np.asarray(position_signal, dtype=float)[mask],
+        )
         out[regime_name[regime_idx]] = {
             "count": float(count),
             "accuracy": float(accuracy_score(split.y_test_cls[mask], y_pred_cls[mask])),
             "f1": float(f1_score(split.y_test_cls[mask], y_pred_cls[mask], zero_division=0)),
+            "net_mean_return": float(execution.get("net_mean_return", math.nan)),
+            "sharpe_net": float(execution.get("sharpe_net", math.nan)),
+            "max_drawdown": float(paper.get("max_drawdown", math.nan)),
+            "total_return": float(paper.get("total_return", math.nan)),
         }
     return out
 
@@ -1737,15 +1966,23 @@ def _near_pass_delta(metrics: dict[str, float], baseline: dict[str, float]) -> d
     }
 
 
-def _alpha_signal_diagnostics(split: SplitData) -> dict[str, object]:
+def _alpha_signal_diagnostics(split: SplitData, horizon: str) -> dict[str, object]:
     """Compute out-of-sample diagnostics for explicit alpha hypotheses."""
     if split.x_test.empty:
         return {"available": False, "reason": "empty_test_set"}
 
+    settings = get_settings()
     current = np.clip(np.asarray(split.current_close_test, dtype=float), 1e-12, None)
     future_return = (np.asarray(split.target_close_test, dtype=float) / current) - 1.0
     if future_return.size == 0:
         return {"available": False, "reason": "empty_future_return"}
+
+    def _signal_position(signal_values: np.ndarray) -> np.ndarray:
+        """Scale raw signal into bounded tradable positions."""
+        magnitude = np.asarray(signal_values, dtype=float)
+        scale = float(np.nanpercentile(np.abs(magnitude), 75)) if magnitude.size else 0.0
+        scale = max(scale, 1e-6)
+        return np.clip(np.tanh(magnitude / scale), -1.0, 1.0)
 
     signal_rows: list[dict[str, object]] = []
     for signal, direction in ALPHA_SIGNAL_DIRECTIONS.items():
@@ -1771,6 +2008,28 @@ def _alpha_signal_diagnostics(split: SplitData) -> dict[str, object]:
             decile_spread_bps = math.nan
 
         alignment = float(np.mean(np.sign(oriented_signal) == np.sign(target)))
+        positions = _signal_position(oriented_signal)
+        direction_up = (positions >= 0).astype(int)
+        execution = execution_aware_metrics(
+            current_close=current[mask],
+            target_close=split.target_close_test[mask],
+            direction_up=direction_up,
+            horizon=horizon,
+            fee_bps=float(settings.execution_fee_bps),
+            slippage_bps=float(settings.execution_slippage_bps),
+            max_turnover_per_step=float(settings.execution_max_turnover_per_step),
+            position_signal=positions,
+        )
+        paper = paper_trading_metrics(
+            current_close=current[mask],
+            target_close=split.target_close_test[mask],
+            direction_up=direction_up,
+            fee_bps=float(settings.execution_fee_bps),
+            slippage_bps=float(settings.execution_slippage_bps),
+            max_turnover_per_step=float(settings.execution_max_turnover_per_step),
+            initial_capital=float(settings.paper_trade_initial_capital),
+            position_signal=positions,
+        )
         signal_rows.append(
             {
                 "signal": signal,
@@ -1780,6 +2039,11 @@ def _alpha_signal_diagnostics(split: SplitData) -> dict[str, object]:
                 "information_coefficient": corr,
                 "decile_spread_bps": decile_spread_bps,
                 "sign_alignment": alignment,
+                "net_mean_return": float(execution.get("net_mean_return", math.nan)),
+                "sharpe_net": float(execution.get("sharpe_net", math.nan)),
+                "turnover_rate": float(execution.get("turnover_rate", math.nan)),
+                "max_drawdown": float(paper.get("max_drawdown", math.nan)),
+                "total_return": float(paper.get("total_return", math.nan)),
             }
         )
 
@@ -2142,8 +2406,11 @@ def _edge_action_mask(
     fee_bps: float,
     slippage_bps: float,
     uncertainty_buffer_mult: float,
+    threshold_scale: float = 1.0,
+    min_take_rate: float | None = None,
 ) -> np.ndarray:
     """Compute action mask from cost-adjusted expected edge."""
+    settings = get_settings()
     prob = np.asarray(cls_prob, dtype=float)
     pred_close = np.asarray(predicted_close, dtype=float)
     current = np.clip(np.asarray(current_close, dtype=float), 1e-12, None)
@@ -2152,24 +2419,164 @@ def _edge_action_mask(
     expected_edge = pred_return_abs * confidence_edge
     per_step_cost = (float(fee_bps) + float(slippage_bps)) / 10000.0
     uncertainty = (float(conformal_q_abs_usd) / current) * float(max(uncertainty_buffer_mult, 0.0))
-    threshold = per_step_cost + uncertainty
-    return expected_edge > threshold
+    threshold = (per_step_cost + uncertainty) * float(max(threshold_scale, 0.0))
+    mask = expected_edge > threshold
+
+    # If the strict edge filter fully abstains, relax conservatively to maintain a minimum
+    # tradable sample for financial-gate evaluation.
+    configured_min_take = settings.edge_action_min_take_rate if min_take_rate is None else min_take_rate
+    min_take_rate = float(np.clip(configured_min_take, 0.0, 0.5))
+    if mask.size == 0 or min_take_rate <= 0.0:
+        return mask
+    take_rate = float(np.mean(mask.astype(float)))
+    if take_rate >= min_take_rate:
+        return mask
+
+    relaxed_threshold = per_step_cost * float(max(settings.edge_action_cost_relax_mult, 0.0))
+    relaxed_mask = expected_edge > relaxed_threshold
+    if not np.any(relaxed_mask):
+        return mask
+
+    needed = int(math.ceil(min_take_rate * float(mask.size)))
+    candidate_idx = np.where(relaxed_mask)[0]
+    if candidate_idx.size <= needed:
+        top_idx = np.argsort(expected_edge)[::-1][:needed]
+        out = np.zeros(mask.shape[0], dtype=bool)
+        out[top_idx] = True
+        return out
+
+    candidate_scores = expected_edge[candidate_idx] - relaxed_threshold
+    selected_local = np.argsort(candidate_scores)[::-1][:needed]
+    selected_idx = candidate_idx[selected_local]
+    out = np.zeros(mask.shape[0], dtype=bool)
+    out[selected_idx] = True
+    return out
 
 
-def _baseline_strategy_book(split: SplitData, horizon: str) -> dict[str, dict[str, dict[str, float] | np.ndarray]]:
-    """Evaluate stronger financial baselines and return metrics per strategy."""
+def _baseline_partition_arrays(
+    split: SplitData,
+    partition: str,
+) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
+    """Resolve split partition arrays used by baseline and tuning diagnostics."""
+    label = partition.strip().lower()
+    if label == "val":
+        return split.x_val, split.current_close_val, split.target_close_val
+    return split.x_test, split.current_close_test, split.target_close_test
+
+
+def _signed_direction_from_policy(cls_pred: np.ndarray, policy: str) -> np.ndarray:
+    """Map classifier direction into a trading-direction signal policy."""
+    policy_label = policy.strip().lower()
+    if policy_label in {"auto", "adaptive", "long_flat", "long_only"}:
+        return np.where(cls_pred == 1, 1.0, 0.0)
+    if policy_label == "short_only":
+        return np.where(cls_pred == 1, 0.0, -1.0)
+    return np.where(cls_pred == 1, 1.0, -1.0)
+
+
+def _returns_objective_score(
+    *,
+    execution_metrics: dict[str, float],
+    paper_metrics: dict[str, float],
+    baseline_execution_metrics: dict[str, float],
+    baseline_paper_metrics: dict[str, float],
+    min_take_rate: float,
+    take_rate: float,
+    max_turnover_per_step: float,
+    max_drawdown_limit: float,
+) -> float:
+    """Score financial quality relative to baseline without relaxing strict promotion rules."""
+    model_net = float(execution_metrics.get("net_mean_return", math.nan))
+    base_net = float(baseline_execution_metrics.get("net_mean_return", math.nan))
+    model_sharpe = float(execution_metrics.get("sharpe_net", math.nan))
+    base_sharpe = float(baseline_execution_metrics.get("sharpe_net", math.nan))
+    model_turnover = float(execution_metrics.get("turnover_rate", math.nan))
+    model_total = float(paper_metrics.get("total_return", math.nan))
+    base_total = float(baseline_paper_metrics.get("total_return", math.nan))
+    model_drawdown = float(paper_metrics.get("max_drawdown", math.nan))
+    base_drawdown = float(baseline_paper_metrics.get("max_drawdown", math.nan))
+
+    if not math.isfinite(model_net):
+        model_net = -1.0
+    if not math.isfinite(base_net):
+        base_net = 0.0
+    if not math.isfinite(model_sharpe):
+        model_sharpe = -5.0
+    if not math.isfinite(base_sharpe):
+        base_sharpe = 0.0
+    if not math.isfinite(model_total):
+        model_total = -1.0
+    if not math.isfinite(base_total):
+        base_total = 0.0
+    if not math.isfinite(model_drawdown):
+        model_drawdown = -1.0
+    if not math.isfinite(base_drawdown):
+        base_drawdown = max_drawdown_limit
+    if not math.isfinite(model_turnover):
+        model_turnover = 1.0
+
+    delta_net = model_net - base_net
+    delta_sharpe = model_sharpe - base_sharpe
+    delta_total = model_total - base_total
+    drawdown_floor = max(float(max_drawdown_limit), float(base_drawdown))
+    drawdown_margin = model_drawdown - drawdown_floor
+
+    net_term = math.tanh(delta_net * 6000.0)
+    sharpe_term = math.tanh(delta_sharpe / 2.0)
+    total_term = math.tanh(delta_total / 2.0)
+    drawdown_term = math.tanh(drawdown_margin / 0.12)
+
+    take_penalty = max(0.0, float(min_take_rate) - float(take_rate))
+    turnover_penalty = max(0.0, float(model_turnover) - float(max_turnover_per_step))
+
+    return (
+        (0.50 * net_term)
+        + (0.22 * sharpe_term)
+        + (0.18 * total_term)
+        + (0.10 * drawdown_term)
+        - (0.28 * take_penalty)
+        - (0.20 * turnover_penalty)
+    )
+
+
+def _returns_tuning_threshold_candidates(prob: np.ndarray) -> np.ndarray:
+    """Generate bounded decision-threshold candidates for returns tuning."""
+    clipped = np.clip(np.asarray(prob, dtype=float), 1e-6, 1 - 1e-6)
+    quantiles = np.quantile(clipped, np.linspace(0.10, 0.90, 9))
+    return np.unique(
+        np.concatenate(
+            [
+                np.linspace(0.30, 0.70, 9),
+                quantiles,
+                np.array([0.25, 0.35, 0.50, 0.65, 0.75]),
+            ]
+        )
+    )
+
+
+def _baseline_strategy_book(
+    split: SplitData,
+    horizon: str,
+    *,
+    partition: str = "test",
+) -> dict[str, dict[str, dict[str, float] | np.ndarray]]:
+    """Evaluate baseline strategies on the requested split partition."""
     settings = get_settings()
-    vol = _frame_column(split.x_test, "volatility_20", default=0.0)
+    features, current_close, target_close = _baseline_partition_arrays(split, partition)
+    vol = _frame_column(features, "volatility_20", default=0.0)
     vol_scale = _vol_target_position_scale(
         vol,
         horizon=horizon,
         target_annual_vol=float(settings.position_target_annual_vol),
         max_leverage=float(settings.position_max_leverage),
     )
-    ret_1 = _frame_column(split.x_test, "ret_1", default=0.0)
-    kalman_trend = _frame_column(split.x_test, "kalman_trend_5", default=0.0)
+    ret_1 = _frame_column(features, "ret_1", default=0.0)
+    kalman_trend = _frame_column(features, "kalman_trend_5", default=0.0)
+    always_long_signal = np.ones(len(features), dtype=float)
+    if bool(settings.baseline_risk_matched):
+        always_long_signal = np.asarray(vol_scale, dtype=float)
     signals: dict[str, np.ndarray] = {
-        "always_long": np.ones(len(split.x_test), dtype=float),
+        "always_long": always_long_signal,
         "vol_targeted_momentum": np.sign(ret_1),
         "vol_targeted_mean_reversion": -np.sign(ret_1),
         "vol_targeted_kalman_trend": np.sign(kalman_trend),
@@ -2179,8 +2586,8 @@ def _baseline_strategy_book(split: SplitData, horizon: str) -> dict[str, dict[st
         position = np.asarray(base_signal, dtype=float) * vol_scale
         direction_up = (position >= 0).astype(int)
         execution = execution_aware_metrics(
-            current_close=split.current_close_test,
-            target_close=split.target_close_test,
+            current_close=current_close,
+            target_close=target_close,
             direction_up=direction_up,
             horizon=horizon,
             fee_bps=float(settings.execution_fee_bps),
@@ -2189,8 +2596,8 @@ def _baseline_strategy_book(split: SplitData, horizon: str) -> dict[str, dict[st
             position_signal=position,
         )
         paper = paper_trading_metrics(
-            current_close=split.current_close_test,
-            target_close=split.target_close_test,
+            current_close=current_close,
+            target_close=target_close,
             direction_up=direction_up,
             fee_bps=float(settings.execution_fee_bps),
             slippage_bps=float(settings.execution_slippage_bps),
@@ -2202,13 +2609,9 @@ def _baseline_strategy_book(split: SplitData, horizon: str) -> dict[str, dict[st
     return payload
 
 
-def _select_financial_baseline(
-    strategy_book: dict[str, dict[str, dict[str, float] | np.ndarray]]
-) -> tuple[str, dict[str, float], dict[str, float]]:
-    """Select strongest financial baseline strategy for promotion comparison."""
+def _best_strategy_name(strategy_book: dict[str, dict[str, dict[str, float] | np.ndarray]]) -> str:
+    """Pick highest-scoring baseline strategy within a provided strategy book."""
     best_name = "always_long"
-    best_exec: dict[str, float] = {}
-    best_paper: dict[str, float] = {}
     best_key = (-math.inf, -math.inf, -math.inf)
     for name, item in strategy_book.items():
         execution = item.get("execution", {})
@@ -2228,9 +2631,216 @@ def _select_financial_baseline(
         if key > best_key:
             best_key = key
             best_name = name
-            best_exec = execution
-            best_paper = paper
-    return best_name, best_exec, best_paper
+    return best_name
+
+
+def _select_financial_baseline(
+    strategy_book_test: dict[str, dict[str, dict[str, float] | np.ndarray]],
+    strategy_book_val: dict[str, dict[str, dict[str, float] | np.ndarray]] | None = None,
+) -> tuple[str, dict[str, float], dict[str, float], dict[str, float], dict[str, float]]:
+    """Select strict baseline strategy with configurable non-oracle policy."""
+    settings = get_settings()
+    mode = settings.financial_baseline_selection_mode.strip().lower()
+    preferred = settings.financial_baseline_strategy.strip().lower()
+
+    selected_name = "always_long"
+    if mode in {"best_validation", "best_val"} and isinstance(strategy_book_val, dict) and strategy_book_val:
+        selected_name = _best_strategy_name(strategy_book_val)
+    elif mode in {"best_expost", "best", "best_test"}:
+        selected_name = _best_strategy_name(strategy_book_test)
+    else:
+        if preferred in strategy_book_test:
+            selected_name = preferred
+        elif "always_long" in strategy_book_test:
+            selected_name = "always_long"
+        elif strategy_book_test:
+            selected_name = sorted(strategy_book_test.keys())[0]
+
+    test_item = strategy_book_test.get(selected_name, {})
+    if not isinstance(test_item, dict):
+        test_item = {}
+    val_item = strategy_book_val.get(selected_name, {}) if isinstance(strategy_book_val, dict) else {}
+    if not isinstance(val_item, dict):
+        val_item = {}
+
+    test_exec = test_item.get("execution", {})
+    test_paper = test_item.get("paper", {})
+    if not isinstance(test_exec, dict):
+        test_exec = {}
+    if not isinstance(test_paper, dict):
+        test_paper = {}
+
+    val_exec = val_item.get("execution", {})
+    val_paper = val_item.get("paper", {})
+    if not isinstance(val_exec, dict):
+        val_exec = test_exec
+    if not isinstance(val_paper, dict):
+        val_paper = test_paper
+
+    return selected_name, test_exec, test_paper, val_exec, val_paper
+
+
+def _returns_tuning_policies() -> list[str]:
+    """Resolve tuning policy list from settings."""
+    settings = get_settings()
+    configured = [item.strip().lower() for item in settings.returns_tuning_policies.split(",") if item.strip()]
+    defaults = ["long_flat", "long_short", "long_only"]
+    if not configured:
+        return defaults
+    valid = [item for item in configured if item in {"long_flat", "long_only", "long_short", "short_only"}]
+    return valid or defaults
+
+
+def _returns_tuning_position_scale_candidates() -> list[float]:
+    """Resolve position-scale candidates for returns tuning."""
+    settings = get_settings()
+    raw_values = [item.strip() for item in settings.returns_tuning_position_scale_candidates.split(",") if item.strip()]
+    parsed: list[float] = []
+    for item in raw_values:
+        try:
+            value = float(item)
+        except ValueError:
+            continue
+        if value <= 0:
+            continue
+        parsed.append(float(np.clip(value, 0.10, 3.0)))
+    if not parsed:
+        parsed = [0.5, 0.75, 1.0, 1.25, 1.5]
+    return sorted(set(parsed))
+
+
+def _tune_returns_profile(
+    *,
+    horizon: str,
+    cls_prob_val: np.ndarray,
+    reg_pred_val: np.ndarray,
+    current_close_val: np.ndarray,
+    target_close_val: np.ndarray,
+    vol_scale_val: np.ndarray,
+    conformal_q_abs_usd: float,
+    baseline_execution_metrics: dict[str, float],
+    baseline_paper_metrics: dict[str, float],
+    default_threshold: float,
+    default_policy: str,
+    default_edge_threshold_scale: float,
+    default_position_scale: float,
+) -> ReturnsTuningResult:
+    """Jointly tune threshold, edge scale, and direction policy for financial objectives."""
+    settings = get_settings()
+    threshold_candidates = _returns_tuning_threshold_candidates(cls_prob_val)
+    edge_scale_candidates = np.array([0.35, 0.50, 0.70, 0.85, 1.00, 1.20], dtype=float)
+    policy_default = default_policy.strip().lower()
+    if policy_default in {"", "auto", "adaptive"}:
+        policy_candidates = _returns_tuning_policies()
+    else:
+        policy_candidates = [policy_default]
+        for candidate in _returns_tuning_policies():
+            if candidate not in policy_candidates:
+                policy_candidates.append(candidate)
+
+    best = ReturnsTuningResult(
+        decision_threshold=float(default_threshold),
+        edge_threshold_scale=float(default_edge_threshold_scale),
+        direction_policy=(policy_candidates[0] if policy_candidates else "long_flat"),
+        position_scale=float(np.clip(default_position_scale, 0.10, 3.0)),
+        objective=-math.inf,
+        diagnostics={},
+    )
+    diagnostics_rows: list[dict[str, object]] = []
+    min_take_rate = float(np.clip(settings.edge_action_min_take_rate, 0.0, 0.5))
+    position_scale_candidates = _returns_tuning_position_scale_candidates()
+
+    for threshold in threshold_candidates:
+        cls_pred_val = (np.asarray(cls_prob_val, dtype=float) >= float(threshold)).astype(int)
+        for edge_scale in edge_scale_candidates:
+            edge_mask_val = _edge_action_mask(
+                cls_prob=cls_prob_val,
+                predicted_close=reg_pred_val,
+                current_close=current_close_val,
+                conformal_q_abs_usd=conformal_q_abs_usd,
+                fee_bps=float(settings.execution_fee_bps),
+                slippage_bps=float(settings.execution_slippage_bps),
+                uncertainty_buffer_mult=float(settings.trade_edge_uncertainty_buffer_mult),
+                threshold_scale=float(edge_scale),
+                min_take_rate=min_take_rate,
+            )
+            take_rate = float(np.mean(edge_mask_val.astype(float))) if edge_mask_val.size else 0.0
+            for direction_policy in policy_candidates:
+                signed_direction = _signed_direction_from_policy(cls_pred_val, direction_policy)
+                for position_scale in position_scale_candidates:
+                    positions = signed_direction * edge_mask_val.astype(float) * np.asarray(vol_scale_val, dtype=float) * float(position_scale)
+                    execution = execution_aware_metrics(
+                        current_close=current_close_val,
+                        target_close=target_close_val,
+                        direction_up=cls_pred_val,
+                        horizon=horizon,
+                        fee_bps=float(settings.execution_fee_bps),
+                        slippage_bps=float(settings.execution_slippage_bps),
+                        max_turnover_per_step=float(settings.execution_max_turnover_per_step),
+                        position_signal=positions,
+                    )
+                    paper = paper_trading_metrics(
+                        current_close=current_close_val,
+                        target_close=target_close_val,
+                        direction_up=cls_pred_val,
+                        fee_bps=float(settings.execution_fee_bps),
+                        slippage_bps=float(settings.execution_slippage_bps),
+                        max_turnover_per_step=float(settings.execution_max_turnover_per_step),
+                        initial_capital=float(settings.paper_trade_initial_capital),
+                        position_signal=positions,
+                    )
+                    objective = _returns_objective_score(
+                        execution_metrics=execution,
+                        paper_metrics=paper,
+                        baseline_execution_metrics=baseline_execution_metrics,
+                        baseline_paper_metrics=baseline_paper_metrics,
+                        min_take_rate=min_take_rate,
+                        take_rate=take_rate,
+                        max_turnover_per_step=float(settings.execution_max_turnover_per_step),
+                        max_drawdown_limit=float(settings.promotion_max_drawdown_limit),
+                    )
+                    diagnostics_rows.append(
+                        {
+                            "decision_threshold": float(threshold),
+                            "edge_threshold_scale": float(edge_scale),
+                            "direction_policy": direction_policy,
+                            "position_scale": float(position_scale),
+                            "take_rate": take_rate,
+                            "objective": float(objective),
+                            "net_mean_return": float(execution.get("net_mean_return", math.nan)),
+                            "baseline_net_mean_return": float(baseline_execution_metrics.get("net_mean_return", math.nan)),
+                            "sharpe_net": float(execution.get("sharpe_net", math.nan)),
+                            "baseline_sharpe_net": float(baseline_execution_metrics.get("sharpe_net", math.nan)),
+                            "total_return": float(paper.get("total_return", math.nan)),
+                            "baseline_total_return": float(baseline_paper_metrics.get("total_return", math.nan)),
+                        }
+                    )
+                    if objective > best.objective:
+                        best = ReturnsTuningResult(
+                            decision_threshold=float(threshold),
+                            edge_threshold_scale=float(edge_scale),
+                            direction_policy=direction_policy,
+                            position_scale=float(position_scale),
+                            objective=float(objective),
+                            diagnostics={
+                                "take_rate": take_rate,
+                                "execution": execution,
+                                "paper": paper,
+                            },
+                        )
+
+    top_rows = sorted(diagnostics_rows, key=lambda item: float(item.get("objective", -math.inf)), reverse=True)[:12]
+    return ReturnsTuningResult(
+        decision_threshold=float(best.decision_threshold),
+        edge_threshold_scale=float(best.edge_threshold_scale),
+        direction_policy=str(best.direction_policy),
+        position_scale=float(best.position_scale),
+        objective=float(best.objective),
+        diagnostics={
+            **best.diagnostics,
+            "top_candidates": top_rows,
+        },
+    )
 
 
 def evaluate_symbol_horizon(
@@ -2240,6 +2850,7 @@ def evaluate_symbol_horizon(
     models_root: Path,
     write_artifacts: bool = True,
     as_of_cutoff_by_granularity: dict[str, int] | None = None,
+    sync_row_depth_by_granularity: dict[str, int] | None = None,
 ) -> dict[str, object]:
     """Evaluate symbol horizon."""
     min_samples = min_samples_for_horizon(spec.label)
@@ -2248,6 +2859,7 @@ def evaluate_symbol_horizon(
         spec,
         min_samples=min_samples,
         as_of_cutoff_by_granularity=as_of_cutoff_by_granularity,
+        sync_row_depth_by_granularity=sync_row_depth_by_granularity,
     )
     if resolved is None:
         return {
@@ -2258,7 +2870,9 @@ def evaluate_symbol_horizon(
             "required_min_samples": min_samples,
         }
 
-    granularity, steps, frame = resolved
+    granularity = resolved.granularity
+    steps = resolved.steps_ahead
+    frame = resolved.frame
     prepared = _prepare_supervised(frame, spec.label, steps, min_samples=min_samples)
     if prepared is None:
         return {
@@ -2318,6 +2932,55 @@ def evaluate_symbol_horizon(
         regime_reg_models=regime_reg_models,
     )
 
+    conformal_q_abs_usd, conformal_val_coverage = _conformal_quantile(
+        y_true=split.target_close_val,
+        y_pred=val_reg_pred,
+        alpha=float(settings.conformal_alpha),
+    )
+
+    strategy_baselines_val = _baseline_strategy_book(split, spec.label, partition="val")
+    strategy_baselines = _baseline_strategy_book(split, spec.label, partition="test")
+    (
+        financial_baseline_name,
+        baseline_execution_metrics,
+        baseline_paper_trading,
+        baseline_execution_metrics_val,
+        baseline_paper_trading_val,
+    ) = _select_financial_baseline(strategy_baselines, strategy_baselines_val)
+
+    decision_threshold = float(np.clip(cls_best.decision_threshold, 0.02, 0.98))
+    edge_threshold_scale = float(np.clip(settings.edge_action_threshold_scale, 0.05, 3.0))
+    position_scale = 1.0
+    direction_policy = settings.trade_direction_policy.strip().lower() or "auto"
+    returns_tuning: ReturnsTuningResult | None = None
+    if bool(settings.returns_tuning_enabled):
+        vol_scale_val = _vol_target_position_scale(
+            _frame_column(split.x_val, "volatility_20", default=0.0),
+            horizon=spec.label,
+            target_annual_vol=float(settings.position_target_annual_vol),
+            max_leverage=float(settings.position_max_leverage),
+        )
+        returns_tuning = _tune_returns_profile(
+            horizon=spec.label,
+            cls_prob_val=val_cls_prob,
+            reg_pred_val=val_reg_pred,
+            current_close_val=split.current_close_val,
+            target_close_val=split.target_close_val,
+            vol_scale_val=vol_scale_val,
+            conformal_q_abs_usd=conformal_q_abs_usd,
+            baseline_execution_metrics=baseline_execution_metrics_val,
+            baseline_paper_metrics=baseline_paper_trading_val,
+            default_threshold=decision_threshold,
+            default_policy=direction_policy,
+            default_edge_threshold_scale=edge_threshold_scale,
+            default_position_scale=position_scale,
+        )
+        if math.isfinite(float(returns_tuning.objective)):
+            decision_threshold = float(np.clip(returns_tuning.decision_threshold, 0.02, 0.98))
+            edge_threshold_scale = float(np.clip(returns_tuning.edge_threshold_scale, 0.05, 3.0))
+            position_scale = float(np.clip(returns_tuning.position_scale, 0.10, 3.0))
+            direction_policy = returns_tuning.direction_policy
+
     cls_prob, reg_pred = _predict_outputs_with_regime(
         x=split.x_test,
         current_close=split.current_close_test,
@@ -2331,7 +2994,7 @@ def evaluate_symbol_horizon(
         regime_cls_models=regime_cls_models,
         regime_reg_models=regime_reg_models,
     )
-    cls_pred = (cls_prob >= cls_best.decision_threshold).astype(int)
+    cls_pred = (cls_prob >= decision_threshold).astype(int)
 
     cls_prob_train, reg_pred_train = _predict_outputs_with_regime(
         x=split.x_train,
@@ -2361,7 +3024,7 @@ def evaluate_symbol_horizon(
         meta_result = _train_meta_labeler(
             split=split,
             horizon=spec.label,
-            decision_threshold=float(cls_best.decision_threshold),
+            decision_threshold=float(decision_threshold),
             cls_prob_train=cls_prob_train,
             cls_prob_val=val_cls_prob,
             reg_pred_train=reg_pred_train,
@@ -2372,7 +3035,7 @@ def evaluate_symbol_horizon(
         x_test_meta = _meta_feature_frame(
             x=split.x_test,
             prob_up=cls_prob,
-            decision_threshold=float(cls_best.decision_threshold),
+            decision_threshold=float(decision_threshold),
             predicted_close=reg_pred,
             current_close=split.current_close_test,
         )
@@ -2382,11 +3045,6 @@ def evaluate_symbol_horizon(
         meta_prob_test = np.ones(len(split.x_test), dtype=float)
         action_mask_test = np.ones(len(split.x_test), dtype=bool)
 
-    conformal_q_abs_usd, conformal_val_coverage = _conformal_quantile(
-        y_true=split.target_close_val,
-        y_pred=val_reg_pred,
-        alpha=float(settings.conformal_alpha),
-    )
     conformal_test_coverage = (
         float(np.mean(np.abs(split.target_close_test - reg_pred) <= conformal_q_abs_usd))
         if conformal_q_abs_usd > 0
@@ -2423,6 +3081,7 @@ def evaluate_symbol_horizon(
         fee_bps=float(settings.execution_fee_bps),
         slippage_bps=float(settings.execution_slippage_bps),
         uncertainty_buffer_mult=float(settings.trade_edge_uncertainty_buffer_mult),
+        threshold_scale=edge_threshold_scale,
     )
     vol_scale = _vol_target_position_scale(
         _frame_column(split.x_test, "volatility_20", default=0.0),
@@ -2430,19 +3089,27 @@ def evaluate_symbol_horizon(
         target_annual_vol=float(settings.position_target_annual_vol),
         max_leverage=float(settings.position_max_leverage),
     )
-    signed_direction = np.where(cls_pred == 1, 1.0, -1.0)
+    vol_scale = np.asarray(vol_scale, dtype=float) * float(position_scale)
+    signed_direction = _signed_direction_from_policy(cls_pred, direction_policy)
     signed_positions_no_meta = signed_direction * edge_action_mask.astype(float) * vol_scale
     signed_positions_test = signed_direction * action_mask_test.astype(float) * edge_action_mask.astype(float) * vol_scale
 
-    regime_breakdown = _regime_metrics(split=split, y_pred_cls=cls_pred)
-    alpha_signal_diag = _alpha_signal_diagnostics(split)
+    regime_breakdown = _regime_metrics(
+        split=split,
+        y_pred_cls=cls_pred,
+        horizon=spec.label,
+        position_signal=signed_positions_test,
+        fee_bps=float(settings.execution_fee_bps),
+        slippage_bps=float(settings.execution_slippage_bps),
+        max_turnover_per_step=float(settings.execution_max_turnover_per_step),
+        initial_capital=float(settings.paper_trade_initial_capital),
+    )
+    alpha_signal_diag = _alpha_signal_diagnostics(split, spec.label)
     baseline = _baseline_metrics(
         y_true_cls=split.y_test_cls,
         y_true_reg=split.target_close_test,
         current_close=split.current_close_test,
     )
-    strategy_baselines = _baseline_strategy_book(split, spec.label)
-    financial_baseline_name, baseline_execution_metrics, baseline_paper_trading = _select_financial_baseline(strategy_baselines)
     execution_metrics = execution_aware_metrics(
         current_close=split.current_close_test,
         target_close=split.target_close_test,
@@ -2457,6 +3124,17 @@ def evaluate_symbol_horizon(
         current_close=split.current_close_test,
         target_close=split.target_close_test,
         direction_up=cls_pred,
+        fee_bps=float(settings.execution_fee_bps),
+        slippage_bps=float(settings.execution_slippage_bps),
+        max_turnover_per_step=float(settings.execution_max_turnover_per_step),
+        initial_capital=float(settings.paper_trade_initial_capital),
+        position_signal=signed_positions_test,
+    )
+    execution_stress = execution_stress_metrics(
+        current_close=split.current_close_test,
+        target_close=split.target_close_test,
+        direction_up=cls_pred,
+        horizon=spec.label,
         fee_bps=float(settings.execution_fee_bps),
         slippage_bps=float(settings.execution_slippage_bps),
         max_turnover_per_step=float(settings.execution_max_turnover_per_step),
@@ -2489,7 +3167,7 @@ def evaluate_symbol_horizon(
         y_true_reg=split.target_close_test,
         y_pred_reg=reg_pred,
         baseline_reg=split.current_close_test,
-        decision_threshold=float(cls_best.decision_threshold),
+        decision_threshold=float(decision_threshold),
         folds=max(int(settings.walk_forward_gate_folds), 2),
     )
     walk_forward_mode = settings.walk_forward_gate_mode.strip().lower()
@@ -2516,13 +3194,15 @@ def evaluate_symbol_horizon(
         drawdown_floor = max(drawdown_floor, baseline_max_drawdown)
     drawdown_gate_pass = math.isfinite(model_max_drawdown) and (model_max_drawdown >= drawdown_floor)
 
-    returns_gate_pass = (
+    returns_gate_vs_baseline = (
         math.isfinite(model_net_mean_return)
         and math.isfinite(baseline_net_mean_return)
         and (model_net_mean_return > baseline_net_mean_return)
     )
+    returns_gate_positive = math.isfinite(model_net_mean_return) and (model_net_mean_return > 0.0)
+    returns_gate_pass = returns_gate_vs_baseline
     if bool(settings.promotion_require_positive_net_return):
-        returns_gate_pass = returns_gate_pass and math.isfinite(model_net_mean_return) and (model_net_mean_return > 0.0)
+        returns_gate_pass = returns_gate_pass and returns_gate_positive
 
     sharpe_gate_pass = True
     if bool(settings.promotion_require_sharpe_above_baseline):
@@ -2578,11 +3258,9 @@ def evaluate_symbol_horizon(
         failed_reasons.append("classification_accuracy_not_above_baseline")
     if require_regression and not (metrics["rmse"] < baseline["rmse"]):
         failed_reasons.append("regression_rmse_not_below_baseline")
-    if not returns_gate_pass:
+    if not returns_gate_vs_baseline:
         failed_reasons.append("execution_net_mean_return_not_above_baseline")
-    if bool(settings.promotion_require_positive_net_return) and not (
-        math.isfinite(model_net_mean_return) and model_net_mean_return > 0.0
-    ):
+    if bool(settings.promotion_require_positive_net_return) and not returns_gate_positive:
         failed_reasons.append("execution_net_mean_return_not_positive")
     if bool(settings.promotion_require_sharpe_above_baseline) and not sharpe_gate_pass:
         failed_reasons.append("execution_sharpe_not_above_baseline")
@@ -2598,7 +3276,10 @@ def evaluate_symbol_horizon(
         failed_reasons.append("martingale_residual_autocorrelation_too_high")
 
     calibration = _build_calibration_payload(split.y_test_cls, cls_prob)
-    calibration["decision_threshold"] = float(cls_best.decision_threshold)
+    calibration["decision_threshold"] = float(decision_threshold)
+    calibration["trade_direction_policy"] = str(direction_policy)
+    calibration["edge_threshold_scale"] = float(edge_threshold_scale)
+    calibration["position_scale"] = float(position_scale)
     calibration["conformal_alpha"] = float(np.clip(float(settings.conformal_alpha), 0.01, 0.40))
     calibration["conformal_q_abs_usd"] = float(conformal_q_abs_usd)
     calibration["conformal_val_coverage"] = float(conformal_val_coverage)
@@ -2632,14 +3313,30 @@ def evaluate_symbol_horizon(
         "granularity": granularity,
         "steps_ahead": steps,
         "rows_total": int(len(enriched)),
+        "rows_input_before_feature_pipeline": int(len(frame)),
+        "archive_rows_available_before_horizon_window": int(resolved.archive_rows_before_window),
         "rows_test": int(len(split.x_test)),
         "as_of_cutoff_time": (
             int(as_of_cutoff_by_granularity.get(granularity))
             if isinstance(as_of_cutoff_by_granularity, dict) and granularity in as_of_cutoff_by_granularity
             else None
         ),
+        "sync_row_depth": (
+            int(sync_row_depth_by_granularity.get(granularity))
+            if isinstance(sync_row_depth_by_granularity, dict) and granularity in sync_row_depth_by_granularity
+            else None
+        ),
         "train_start_time": int(frame["start_time"].iloc[0]) if len(frame) else None,
         "train_end_time": int(frame["start_time"].iloc[-1]) if len(frame) else None,
+        "archive_start_time_before_horizon_window": resolved.archive_start_time,
+        "archive_end_time_before_horizon_window": resolved.archive_end_time,
+        "horizon_training_window": {
+            "enabled": bool(settings.train_horizon_windowing_enabled),
+            "rows_limit": resolved.horizon_window_rows_limit,
+            "trim_applied": bool(resolved.horizon_window_trim_applied),
+            "archive_rows_before_window": int(resolved.archive_rows_before_window),
+            "rows_used_after_window": int(len(frame)),
+        },
         "selected_models": {
             "classifier": cls_best.model_name,
             "regressor": reg_best.model_name,
@@ -2647,6 +3344,10 @@ def evaluate_symbol_horizon(
             "classifier_down_weight_boost": float(cls_best.class_down_weight_boost),
             "classifier_threshold_tuning": cls_best.threshold_tuning or {},
             "classifier_stability": cls_best.stability or {},
+            "decision_threshold_runtime": float(decision_threshold),
+            "trade_direction_policy_runtime": str(direction_policy),
+            "edge_threshold_scale_runtime": float(edge_threshold_scale),
+            "position_scale_runtime": float(position_scale),
             "regression_target": reg_best.regression_target,
             "regression_blend_alpha": reg_blend_alpha,
             "regression_stability": reg_best.stability or {},
@@ -2679,10 +3380,12 @@ def evaluate_symbol_horizon(
         "metric_confidence_intervals": metric_confidence_intervals,
         "data_leakage_checks": split.leakage_diagnostic,
         "execution_aware_metrics": execution_metrics,
+        "execution_stress_metrics": execution_stress,
         "baseline_execution_aware_metrics": baseline_execution_metrics,
         "paper_trading_metrics": paper_trading,
         "baseline_paper_trading_metrics": baseline_paper_trading,
         "financial_baseline_strategy": financial_baseline_name,
+        "financial_baseline_selection_mode": settings.financial_baseline_selection_mode,
         "financial_baseline_candidates": {
             name: {
                 "execution": (item.get("execution") if isinstance(item, dict) else {}),
@@ -2690,6 +3393,26 @@ def evaluate_symbol_horizon(
             }
             for name, item in strategy_baselines.items()
         },
+        "financial_baseline_candidates_validation": {
+            name: {
+                "execution": (item.get("execution") if isinstance(item, dict) else {}),
+                "paper": (item.get("paper") if isinstance(item, dict) else {}),
+            }
+            for name, item in strategy_baselines_val.items()
+        },
+        "returns_tuning": (
+            {
+                "enabled": True,
+                "objective": float(returns_tuning.objective),
+                "decision_threshold": float(returns_tuning.decision_threshold),
+                "edge_threshold_scale": float(returns_tuning.edge_threshold_scale),
+                "trade_direction_policy": returns_tuning.direction_policy,
+                "position_scale": float(returns_tuning.position_scale),
+                "diagnostics": returns_tuning.diagnostics,
+            }
+            if returns_tuning is not None
+            else {"enabled": False}
+        ),
         "ablation_metrics": {
             "with_meta_abstention": {
                 "execution": execution_metrics,

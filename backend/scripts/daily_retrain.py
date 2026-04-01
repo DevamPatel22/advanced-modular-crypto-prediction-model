@@ -104,6 +104,11 @@ def main() -> None:
     parser.add_argument("--skip-ingest", action="store_true", help="Skip pre-training ingestion cycle")
     parser.add_argument("--output-prefix", default="reports", help="Output folder for reports")
     parser.add_argument(
+        "--strict-quality-only",
+        action="store_true",
+        help="Abort retrain when quality gate fails after remediation (no pair-level exclusion fallback)",
+    )
+    parser.add_argument(
         "--enforce-data-quality",
         action="store_true",
         help="Run data quality preflight and abort retrain when gate fails",
@@ -157,6 +162,16 @@ def main() -> None:
         type=int,
         default=25,
         help="Delay between backfill API calls during remediation",
+    )
+    parser.add_argument(
+        "--deep-backfill-parity",
+        action="store_true",
+        help="Before quality gate, deep-backfill selected symbols using anchor-row parity targets",
+    )
+    parser.add_argument(
+        "--parity-anchor-symbol",
+        default="BTC-USD",
+        help="Anchor symbol for parity deep-backfill target rows",
     )
     parser.add_argument(
         "--enforce-sla",
@@ -221,6 +236,8 @@ def main() -> None:
     sla_report_path = f"{args.output_prefix}/sla_gate_{args.model_version}.json"
     ci_gate_report_path = f"{args.output_prefix}/ci_gate_{args.model_version}.json"
     scorecard_output_path = f"{args.output_prefix}/scorecard_{args.model_version}.json"
+    hypothesis_report_path = f"{args.output_prefix}/hypothesis_report_{args.model_version}.json"
+    oos_validation_report_path = f"{args.output_prefix}/oos_validation_{args.model_version}.json"
     model_card_output_path = f"../docs/model-cards/{args.model_version}.md"
 
     if not args.skip_ingest:
@@ -240,6 +257,54 @@ def main() -> None:
             for item in (effective_horizons if effective_horizons else settings.supported_horizons).split(",")
             if item.strip()
         ]
+        quality_granularity_list = [item.strip() for item in args.quality_granularities.split(",") if item.strip()]
+
+        if args.deep_backfill_parity and selected_symbols and quality_granularity_list:
+            parity_backfill_output = f"{args.output_prefix}/backfill_parity_{args.model_version}.json"
+            parity_backfill_cmd = [
+                sys.executable,
+                "scripts/backfill_market_data.py",
+                "--symbols",
+                ",".join(sorted(set(selected_symbols + [args.parity_anchor_symbol.strip().upper()]))),
+                "--granularities",
+                ",".join(quality_granularity_list),
+                "--max-passes",
+                str(max(int(args.remediation_max_passes), 1)),
+                "--sleep-ms",
+                str(max(int(args.remediation_sleep_ms), 0)),
+                "--parity-anchor-symbol",
+                args.parity_anchor_symbol.strip().upper(),
+                "--output",
+                parity_backfill_output,
+            ]
+            parity_proc = _run_command(parity_backfill_cmd)
+            run_report["steps"].append(
+                {
+                    "step": "data_parity_backfill",
+                    "status": "ok" if parity_proc.returncode == 0 else "failed",
+                    "returncode": parity_proc.returncode,
+                    "anchor_symbol": args.parity_anchor_symbol.strip().upper(),
+                    "symbols": sorted(set(selected_symbols + [args.parity_anchor_symbol.strip().upper()])),
+                    "granularities": quality_granularity_list,
+                    "stdout_tail": parity_proc.stdout[-4000:],
+                    "stderr_tail": parity_proc.stderr[-4000:],
+                    "report": str(PROJECT_ROOT / parity_backfill_output),
+                }
+            )
+            if parity_proc.returncode != 0 and args.strict_quality_only:
+                output_file = output_root / f"daily_retrain_{args.model_version}.json"
+                output_file.write_text(json.dumps(run_report, indent=2), encoding="utf-8")
+                print(
+                    json.dumps(
+                        {
+                            "status": "failed",
+                            "reason": "data_parity_backfill_failed",
+                            "report": str(output_file),
+                        },
+                        indent=2,
+                    )
+                )
+                raise SystemExit(1)
 
         def _quality_cmd() -> list[str]:
             cmd = [
@@ -365,6 +430,21 @@ def main() -> None:
                 )
 
         if quality_proc.returncode != 0 or not quality_gate_passed:
+            if args.strict_quality_only:
+                output_file = output_root / f"daily_retrain_{args.model_version}.json"
+                output_file.write_text(json.dumps(run_report, indent=2), encoding="utf-8")
+                print(
+                    json.dumps(
+                        {
+                            "status": "failed",
+                            "reason": "data_quality_gate_failed_strict",
+                            "report": str(output_file),
+                            "quality_report": str(PROJECT_ROOT / quality_report_path),
+                        },
+                        indent=2,
+                    )
+                )
+                raise SystemExit(1)
             excluded_symbol_horizons = _excluded_pairs_from_quality_report(
                 quality_payload=quality_payload,
                 symbols=selected_symbols,
@@ -477,6 +557,28 @@ def main() -> None:
         print(json.dumps({"status": "failed", "report": str(output_file)}, indent=2))
         raise SystemExit(1)
 
+    hypothesis_cmd = [
+        sys.executable,
+        "scripts/hypothesis_report.py",
+        "--summary-report",
+        train_output,
+        "--horizons",
+        (effective_horizons if effective_horizons else settings.phase1_focus_horizons),
+        "--output",
+        hypothesis_report_path,
+    ]
+    hypothesis_proc = _run_command(hypothesis_cmd)
+    run_report["steps"].append(
+        {
+            "step": "hypothesis_report",
+            "status": "ok" if hypothesis_proc.returncode == 0 else "failed",
+            "returncode": hypothesis_proc.returncode,
+            "stdout_tail": hypothesis_proc.stdout[-4000:],
+            "stderr_tail": hypothesis_proc.stderr[-4000:],
+            "hypothesis_report": str(PROJECT_ROOT / hypothesis_report_path),
+        }
+    )
+
     if args.enforce_ci_gate:
         ci_cmd = [
             sys.executable,
@@ -562,6 +664,28 @@ def main() -> None:
         }
     )
 
+    oos_cmd = [
+        sys.executable,
+        "scripts/oos_validation_report.py",
+        "--summary-report",
+        train_output,
+        "--promotion-report",
+        promote_output,
+        "--output",
+        oos_validation_report_path,
+    ]
+    oos_proc = _run_command(oos_cmd)
+    run_report["steps"].append(
+        {
+            "step": "oos_validation_report",
+            "status": "ok" if oos_proc.returncode == 0 else "failed",
+            "returncode": oos_proc.returncode,
+            "stdout_tail": oos_proc.stdout[-4000:],
+            "stderr_tail": oos_proc.stderr[-4000:],
+            "oos_validation_report": str(PROJECT_ROOT / oos_validation_report_path),
+        }
+    )
+
     if not args.skip_scorecard:
         scorecard_cmd = [
             sys.executable,
@@ -619,6 +743,28 @@ def main() -> None:
             }
         )
 
+    active_after = registry.get_active_model_version()
+    robust_validation_output_path = f"{args.output_prefix}/robust_validation_{active_after}.json"
+    robust_cmd = [
+        sys.executable,
+        "scripts/robust_validation_report.py",
+        "--model-version",
+        active_after,
+        "--output",
+        robust_validation_output_path,
+    ]
+    robust_proc = _run_command(robust_cmd)
+    run_report["steps"].append(
+        {
+            "step": "robust_validation_report",
+            "status": "ok" if robust_proc.returncode == 0 else "failed",
+            "returncode": robust_proc.returncode,
+            "stdout_tail": robust_proc.stdout[-4000:],
+            "stderr_tail": robust_proc.stderr[-4000:],
+            "robust_validation_report": str(PROJECT_ROOT / robust_validation_output_path),
+        }
+    )
+
     output_file = output_root / f"daily_retrain_{args.model_version}.json"
     output_file.write_text(json.dumps(run_report, indent=2), encoding="utf-8")
     event_path = log_experiment_event(
@@ -633,8 +779,11 @@ def main() -> None:
             "quality_report": str(PROJECT_ROOT / quality_report_path) if args.enforce_data_quality else None,
             "sla_report": str(PROJECT_ROOT / sla_report_path) if args.enforce_sla else None,
             "ci_gate_report": str(PROJECT_ROOT / ci_gate_report_path) if args.enforce_ci_gate else None,
+            "hypothesis_report": str(PROJECT_ROOT / hypothesis_report_path),
+            "oos_validation_report": str(PROJECT_ROOT / oos_validation_report_path),
             "scorecard_report": str(PROJECT_ROOT / scorecard_output_path) if not args.skip_scorecard else None,
             "model_card": str(PROJECT_ROOT / model_card_output_path) if not args.skip_scorecard else None,
+            "robust_validation_report": str(PROJECT_ROOT / robust_validation_output_path),
             "excluded_symbol_horizons": sorted([f"{symbol}:{horizon}" for symbol, horizon in excluded_symbol_horizons]),
         },
     )
@@ -645,15 +794,18 @@ def main() -> None:
                 "status": "ok" if promote_proc.returncode == 0 else "failed",
                 "model_version": args.model_version,
                 "active_before": active_before,
-                "active_after": registry.get_active_model_version(),
+                "active_after": active_after,
                 "run_report": str(output_file),
                 "summary_report": str(PROJECT_ROOT / train_output),
                 "promotion_report": str(PROJECT_ROOT / promote_output),
                 "quality_report": str(PROJECT_ROOT / quality_report_path) if args.enforce_data_quality else None,
                 "sla_report": str(PROJECT_ROOT / sla_report_path) if args.enforce_sla else None,
                 "ci_gate_report": str(PROJECT_ROOT / ci_gate_report_path) if args.enforce_ci_gate else None,
+                "hypothesis_report": str(PROJECT_ROOT / hypothesis_report_path),
+                "oos_validation_report": str(PROJECT_ROOT / oos_validation_report_path),
                 "scorecard_report": str(PROJECT_ROOT / scorecard_output_path) if not args.skip_scorecard else None,
                 "model_card": str(PROJECT_ROOT / model_card_output_path) if not args.skip_scorecard else None,
+                "robust_validation_report": str(PROJECT_ROOT / robust_validation_output_path),
                 "experiment_events_path": str(event_path),
                 "ingestion_enabled": settings.ingestion_enabled,
                 "effective_symbols": effective_symbols if effective_symbols else None,

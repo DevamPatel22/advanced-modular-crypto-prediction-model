@@ -23,6 +23,7 @@ from app.ml.features import HORIZON_SPECS
 from app.ml.training import evaluate_symbol_horizon
 from app.services.ingestion import run_ingestion_cycle
 from app.services.model_registry import ModelRegistry
+from scripts.train_all_symbols import _compute_asof_cutoff_map, _compute_sync_row_depth_map, _query_dataset_snapshot
 
 
 @dataclass(frozen=True)
@@ -355,6 +356,106 @@ def _copy_artifact_bundle(
     return True
 
 
+def _metrics_entry(
+    models_root: Path,
+    model_version: str,
+    symbol: str,
+    horizon: str,
+) -> dict[str, object] | None:
+    """Load one metrics artifact for summary/report generation."""
+    metrics_path = models_root / model_version / symbol / f"metrics_{horizon}.json"
+    if not metrics_path.exists():
+        return None
+    try:
+        payload = json.loads(metrics_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    payload = dict(payload)
+    payload["model_version"] = model_version
+    payload["symbol"] = symbol
+    payload["horizon"] = horizon
+    return payload
+
+
+def _summarize_horizons(horizons: dict[str, dict[str, object]]) -> dict[str, int]:
+    """Summarize pass/fail/insufficient counts for one symbol."""
+    summary = {"passed": 0, "failed": 0, "insufficient": 0}
+    for entry in horizons.values():
+        if not isinstance(entry, dict):
+            summary["insufficient"] += 1
+            continue
+        if entry.get("status") != "ok":
+            summary["insufficient"] += 1
+            continue
+        gate = entry.get("promotion_gate", {})
+        if isinstance(gate, dict) and bool(gate.get("passed")):
+            summary["passed"] += 1
+        else:
+            summary["failed"] += 1
+    return summary
+
+
+def _build_symbol_tree(
+    *,
+    results: list[dict[str, object]],
+    carry_forward_pairs: list[dict[str, object]],
+    models_root: Path,
+    model_version: str,
+) -> dict[str, dict[str, object]]:
+    """Build the same symbol/horizon summary tree used by full retrains."""
+    symbols: dict[str, dict[str, object]] = {}
+
+    def _bucket(symbol: str) -> dict[str, object]:
+        return symbols.setdefault(
+            symbol,
+            {
+                "symbol": symbol,
+                "model_version": model_version,
+                "horizons": {},
+                "summary": {"passed": 0, "failed": 0, "insufficient": 0},
+            },
+        )
+
+    for entry in results:
+        if not isinstance(entry, dict):
+            continue
+        symbol = str(entry.get("symbol", "")).upper()
+        horizon = str(entry.get("horizon", "")).lower()
+        if not symbol or not horizon:
+            continue
+        _bucket(symbol)["horizons"][horizon] = entry
+
+    for item in carry_forward_pairs:
+        if not isinstance(item, dict):
+            continue
+        symbol = str(item.get("symbol", "")).upper()
+        horizon = str(item.get("horizon", "")).lower()
+        if not symbol or not horizon:
+            continue
+        bucket = _bucket(symbol)
+        if horizon in bucket["horizons"]:
+            continue
+        metrics_entry = _metrics_entry(models_root=models_root, model_version=model_version, symbol=symbol, horizon=horizon)
+        if metrics_entry is not None:
+            bucket["horizons"][horizon] = metrics_entry
+        else:
+            bucket["horizons"][horizon] = {
+                "symbol": symbol,
+                "horizon": horizon,
+                "status": str(item.get("status", "missing")),
+                "reason": str(item.get("reason", item.get("status", "missing"))),
+                "model_version": model_version,
+            }
+
+    for bucket in symbols.values():
+        horizons = bucket.get("horizons", {})
+        if isinstance(horizons, dict):
+            bucket["summary"] = _summarize_horizons(horizons)
+    return symbols
+
+
 def main() -> None:
     """Run the script entrypoint."""
     parser = argparse.ArgumentParser(description="Continuously retrain near-promotion pairs and promote merged winners")
@@ -482,6 +583,41 @@ def main() -> None:
                     break
 
     horizon_specs = {item.label: item for item in HORIZON_SPECS}
+    evaluation_symbols = sorted(set(symbols).union({item.symbol for item in selected}).union({symbol for symbol, _ in promoted_pairs}))
+    evaluation_horizons = sorted(set([item.horizon for item in selected]).union({horizon for _, horizon in promoted_pairs}))
+    evaluation_specs = [horizon_specs[item] for item in evaluation_horizons if item in horizon_specs]
+    evaluation_granularities = sorted(
+        {
+            granularity
+            for spec in evaluation_specs
+            for granularity, _steps in spec.candidates
+        }
+    )
+    dataset_snapshot = _query_dataset_snapshot(
+        db_path=PROJECT_ROOT / settings.market_data_sqlite_path,
+        symbols=evaluation_symbols,
+        granularities=evaluation_granularities,
+    )
+    asof_cutoff_map, asof_diagnostics = _compute_asof_cutoff_map(
+        dataset_snapshot=dataset_snapshot,
+        symbols=evaluation_symbols,
+        granularities=evaluation_granularities,
+    )
+    sync_row_depth_map, sync_row_depth_diagnostics = _compute_sync_row_depth_map(
+        dataset_snapshot=dataset_snapshot,
+        symbols=evaluation_symbols,
+        granularities=evaluation_granularities,
+        min_coverage_ratio=float(settings.train_sync_row_depth_min_coverage_ratio),
+    )
+    if bool(settings.train_sync_row_depth_enabled) and bool(settings.train_sync_row_depth_require_all_granularities):
+        missing = [granularity for granularity in evaluation_granularities if granularity not in sync_row_depth_map]
+        if missing:
+            raise SystemExit(
+                "Near-promotion retrain blocked: synchronized row depth missing granularities: "
+                + ",".join(sorted(missing))
+            )
+    active_sync_row_depth_map = sync_row_depth_map if bool(settings.train_sync_row_depth_enabled) else {}
+
     results: list[dict[str, object]] = []
     for index, item in enumerate(selected, start=1):
         print(
@@ -505,6 +641,8 @@ def main() -> None:
             model_version=args.model_version,
             models_root=models_root,
             write_artifacts=True,
+            as_of_cutoff_by_granularity=asof_cutoff_map if asof_cutoff_map else None,
+            sync_row_depth_by_granularity=active_sync_row_depth_map if active_sync_row_depth_map else None,
         )
         if entry.get("status") == "ok":
             gate = entry.get("promotion_gate", {})
@@ -571,6 +709,8 @@ def main() -> None:
             model_version=args.model_version,
             models_root=models_root,
             write_artifacts=True,
+            as_of_cutoff_by_granularity=asof_cutoff_map if asof_cutoff_map else None,
+            sync_row_depth_by_granularity=active_sync_row_depth_map if active_sync_row_depth_map else None,
         )
         results.append(entry)
         carry_forward_pairs.append(
@@ -591,6 +731,12 @@ def main() -> None:
         )
 
     summary_output = output_root / f"summary_report_{args.model_version}.json"
+    summary_symbols = _build_symbol_tree(
+        results=results,
+        carry_forward_pairs=carry_forward_pairs,
+        models_root=models_root,
+        model_version=args.model_version,
+    )
     summary_output.write_text(
         json.dumps(
             {
@@ -599,6 +745,12 @@ def main() -> None:
                 "source_summary_report": str(summary_path),
                 "selected_pairs": [_candidate_payload(item) for item in selected],
                 "carry_forward_pairs": carry_forward_pairs,
+                "asof_cutoff_map": asof_cutoff_map,
+                "asof_diagnostics": asof_diagnostics,
+                "sync_row_depth_enabled": bool(settings.train_sync_row_depth_enabled),
+                "sync_row_depth_map": active_sync_row_depth_map,
+                "sync_row_depth_diagnostics": sync_row_depth_diagnostics,
+                "symbols": summary_symbols,
                 "results": results,
                 "phase": args.phase,
             },
@@ -627,6 +779,57 @@ def main() -> None:
     promote_proc = _run_command(promote_cmd)
     if promote_proc.returncode != 0:
         raise SystemExit(promote_proc.stderr[-4000:])
+
+    hypothesis_output = output_root / f"hypothesis_report_{args.model_version}.json"
+    hypothesis_cmd = [
+        sys.executable,
+        "scripts/hypothesis_report.py",
+        "--summary-report",
+        str(summary_output.relative_to(PROJECT_ROOT)),
+        "--horizons",
+        ",".join(evaluation_horizons),
+        "--output",
+        str(hypothesis_output.relative_to(PROJECT_ROOT)),
+    ]
+    hypothesis_proc = _run_command(hypothesis_cmd)
+    if hypothesis_proc.returncode != 0:
+        raise SystemExit(hypothesis_proc.stderr[-4000:])
+
+    oos_output = output_root / f"oos_validation_{args.model_version}.json"
+    oos_cmd = [
+        sys.executable,
+        "scripts/oos_validation_report.py",
+        "--summary-report",
+        str(summary_output.relative_to(PROJECT_ROOT)),
+        "--promotion-report",
+        str(promote_output.relative_to(PROJECT_ROOT)),
+        "--output",
+        str(oos_output.relative_to(PROJECT_ROOT)),
+    ]
+    oos_proc = _run_command(oos_cmd)
+    if oos_proc.returncode != 0:
+        raise SystemExit(oos_proc.stderr[-4000:])
+
+    scorecard_output = output_root / f"scorecard_{args.model_version}.json"
+    scorecard_cmd = [
+        sys.executable,
+        "scripts/daily_scorecard.py",
+        "--model-version",
+        args.model_version,
+        "--summary-report",
+        str(summary_output.relative_to(PROJECT_ROOT)),
+        "--promotion-report",
+        str(promote_output.relative_to(PROJECT_ROOT)),
+        "--symbols",
+        ",".join(symbols),
+        "--horizons",
+        ",".join(evaluation_horizons),
+        "--output",
+        str(scorecard_output.relative_to(PROJECT_ROOT)),
+    ]
+    scorecard_proc = _run_command(scorecard_cmd)
+    if scorecard_proc.returncode != 0:
+        raise SystemExit(scorecard_proc.stderr[-4000:])
 
     soft_promoted_pairs: list[str] = []
     soft_mode_enabled = (
@@ -691,6 +894,20 @@ def main() -> None:
             registry_after.write(payload_after)
             print(json.dumps({"soft_promoted_pairs": soft_promoted_pairs}))
 
+    active_after = ModelRegistry().get_active_model_version()
+    robust_output = output_root / f"robust_validation_{active_after}.json"
+    robust_cmd = [
+        sys.executable,
+        "scripts/robust_validation_report.py",
+        "--model-version",
+        active_after,
+        "--output",
+        str(robust_output.relative_to(PROJECT_ROOT)),
+    ]
+    robust_proc = _run_command(robust_cmd)
+    if robust_proc.returncode != 0:
+        raise SystemExit(robust_proc.stderr[-4000:])
+
     run_output = output_root / f"near_promotion_{args.model_version}.json"
     run_output.write_text(
         json.dumps(
@@ -698,7 +915,7 @@ def main() -> None:
                 "generated_at": datetime.now(tz=UTC).isoformat(),
                 "model_version": args.model_version,
                 "active_before": active_before,
-                "active_after": ModelRegistry().get_active_model_version(),
+                "active_after": active_after,
                 "source_summary_report": str(summary_path),
                 "selected_pairs_count": len(selected),
                 "selected_pairs": [_candidate_payload(item) for item in selected],
@@ -706,6 +923,10 @@ def main() -> None:
                 "soft_promoted_pairs": soft_promoted_pairs,
                 "summary_report": str(summary_output),
                 "promotion_report": str(promote_output),
+                "hypothesis_report": str(hypothesis_output),
+                "oos_validation_report": str(oos_output),
+                "scorecard_report": str(scorecard_output),
+                "robust_validation_report": str(robust_output),
             },
             indent=2,
         ),
@@ -718,12 +939,16 @@ def main() -> None:
                 "status": "ok",
                 "model_version": args.model_version,
                 "active_before": active_before,
-                "active_after": ModelRegistry().get_active_model_version(),
+                "active_after": active_after,
                 "selected_pairs": [f"{item.symbol}:{item.horizon}" for item in selected],
                 "carry_forward_pairs": [f"{item['symbol']}:{item['horizon']}:{item['status']}" for item in carry_forward_pairs],
                 "soft_promoted_pairs": soft_promoted_pairs,
                 "summary_report": str(summary_output),
                 "promotion_report": str(promote_output),
+                "hypothesis_report": str(hypothesis_output),
+                "oos_validation_report": str(oos_output),
+                "scorecard_report": str(scorecard_output),
+                "robust_validation_report": str(robust_output),
                 "run_report": str(run_output),
             },
             indent=2,

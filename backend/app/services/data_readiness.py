@@ -98,6 +98,61 @@ def latest_scorecard_report() -> dict[str, object]:
     }
 
 
+def latest_robust_validation_report() -> dict[str, object]:
+    """Load the newest robust validation bundle if available."""
+    root = _reports_root()
+    candidates = sorted(list(root.glob("robust_validation*.json")), key=lambda path: path.stat().st_mtime, reverse=True)
+    if not candidates:
+        return {
+            "available": False,
+            "message": "No robust validation reports found in reports directory",
+        }
+    path = candidates[0]
+    payload = _safe_load(path)
+    if payload is None:
+        return {
+            "available": False,
+            "message": f"Latest robust validation report is unreadable: {path.name}",
+            "path": str(path),
+        }
+    return {
+        "available": True,
+        "path": str(path),
+        "generated_at": payload.get("generated_at"),
+        "model_version": payload.get("model_version"),
+        "promoted_pair_count": payload.get("promoted_pair_count"),
+        "robust_alpha_gate_passed": payload.get("robust_alpha_gate_passed"),
+        "oos_summary": payload.get("oos_summary", {}),
+        "shadow_validation": payload.get("shadow_validation", {}),
+    }
+
+
+def latest_shadow_report() -> dict[str, object]:
+    """Load the newest shadow trading report if available."""
+    root = _reports_root()
+    candidates = sorted(list(root.glob("shadow_report*.json")), key=lambda path: path.stat().st_mtime, reverse=True)
+    if not candidates:
+        return {
+            "available": False,
+            "message": "No shadow trading reports found in reports directory",
+        }
+    path = candidates[0]
+    payload = _safe_load(path)
+    if payload is None:
+        return {
+            "available": False,
+            "message": f"Latest shadow report is unreadable: {path.name}",
+            "path": str(path),
+        }
+    return {
+        "available": True,
+        "path": str(path),
+        "generated_at": payload.get("generated_at"),
+        "model_version": payload.get("model_version"),
+        "overall": payload.get("overall", {}),
+    }
+
+
 def source_health_summary(hours: int = 24) -> dict[str, object]:
     """Compute source health summary."""
     db_path = _db_path()

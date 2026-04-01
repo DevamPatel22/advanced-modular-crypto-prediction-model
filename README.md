@@ -35,7 +35,14 @@ Build a reliable, scalable prediction platform that can evolve from MVP analytic
 - Meta-labeling policy layer to abstain from low-edge trades even when base direction is available
 - Conformal prediction intervals in API output (`conformal_low_usd`, `conformal_high_usd`, `conformal_confidence`)
 - Promotion gate now uses a returns-first policy (net return, Sharpe, total return, drawdown, leakage/walk-forward)
+- Financial baseline selection is now non-oracle (fixed strategy by default, with optional validation-selected mode)
+- Returns tuning now jointly optimizes decision threshold, edge-filter scale, and trade-direction policy against strict financial gates
+- Returns tuning now also optimizes position-size scale on validation to maximize net risk-adjusted outcomes
 - Source credibility safeguards in market data ingestion (integrity/freshness/divergence checks)
+- Full archive storage is retained, while training now uses horizon-specific recent windows so older regimes do not dilute short/medium-horizon models
+- Walk-forward promotion is now strict by default for newly trained artifacts; diagnostic-only walk-forward payloads are no longer trusted for fresh promotions
+- Robust validation bundle available for the active model (OOS summary, regime summary, execution-stress summary, and model-matched shadow-validation status)
+- Frozen champion + shadow-trading tooling available for live paper validation without mutating the active registry
 - Bootstrap promotions now focus on short horizons first (`5m,1h,3h,6h,12h`) for faster first qualified pairs
 - Interactive frontend with:
   - markets homepage (search by symbol or coin name)
@@ -86,6 +93,8 @@ Optional controls:
 
 - `--exclude-symbol-horizons BTC-USD:6h,ETH-USD:1d` to skip weak/unhealthy pairs for a run
 - `--asof-cutoff-map 1m:1772559060,1h:1772557200` to enforce explicit synchronized training cutoffs
+- synchronized row-depth parity is auto-applied by granularity when `TRAIN_SYNC_ROW_DEPTH_ENABLED=true`
+- horizon-specific recent-window caps are auto-applied before feature generation when `TRAIN_HORIZON_WINDOWING_ENABLED=true`
 
 Or run full daily pipeline (ingest -> train -> promote):
 
@@ -104,11 +113,13 @@ Fast near-promotion cycle (for continuous incremental promotion work on key symb
 
 ```bash
 cd backend
-python scripts/near_promotion_retrain.py --phase phase3 --skip-ingest --symbols BTC-USD,ETH-USD,SOL-USD --max-pairs 6
+python scripts/near_promotion_retrain.py --phase phase3 --symbols BTC-USD,ETH-USD,SOL-USD --max-pairs 6
 ```
 
 This loop auto-selects candidates from the broadest available summary report (not just the latest tiny near-loop report), then retrains near-pass pairs and merges newly qualified promotions into the active registry.
 It also carries forward prior promoted artifacts so promoted pairs stay deployable across incremental near-loop model versions.
+Each near-loop cycle now also emits a fresh hypothesis report, OOS validation report, and scorecard for the candidate version.
+It also emits a robust-validation bundle for the post-promotion active model.
 For pair-by-pair promotion workflows, use `--target-pairs SYMBOL:HORIZON` (with optional soft-promotion thresholds).
 
 Data-first workflow before strict promotion loops:
@@ -118,9 +129,15 @@ cd backend
 python scripts/backfill_market_data.py \
   --symbols BTC-USD,ETH-USD,SOL-USD \
   --granularities 1m,5m,15m,1h,6h,1d \
-  --target-rows-map 1m:30000,5m:18000,15m:12000,1h:6000,6h:2500,1d:1500
+  --target-rows-map 1m:30000,5m:18000,15m:12000,1h:6000,6h:2500,1d:1500 \
+  --deep-history \
+  --deep-history-max-limit-map 1m:60000,5m:30000,15m:20000,1h:15000,6h:12000,1d:5000
 
 python scripts/data_quality_report.py \
+  --symbols BTC-USD,ETH-USD,SOL-USD \
+  --granularities 1m,5m,15m,1h,6h,1d
+
+python scripts/history_completeness_report.py \
   --symbols BTC-USD,ETH-USD,SOL-USD \
   --granularities 1m,5m,15m,1h,6h,1d
 
@@ -128,11 +145,16 @@ python scripts/daily_retrain.py --phase phase3 --enforce-data-quality --symbols 
 ```
 
 This sequence hardens training inputs and avoids promoting models trained on stale/thin data.
+It also keeps strict promotion fair by avoiding ex-post baseline selection on the same evaluation window.
+The scheduled near-promotion loop now ingests fresh candles before retraining, so the local model registry is trained on current rather than stale archive tails.
 
 Operational readiness endpoints:
 
 - `GET /api/v1/health/data-readiness`
 - `GET /api/v1/health/source-health?hours=24`
+- `GET /api/v1/health/model-scorecard`
+- `GET /api/v1/health/robust-validation`
+- `GET /api/v1/health/shadow-trading`
 
 These expose data-quality gate status and live source reliability telemetry.
 
@@ -150,6 +172,18 @@ Institutional-grade additions now included:
 - experiment event logging and safe auto-rollback guard tooling
 - immutable artifact checksum manifests for each model version
 - daily scorecard + model-card generation for decision transparency, including meta-ablation deltas
+- automatic robust-validation bundle generation after retrain/promotion
+- frozen champion utilities for live shadow capture, settlement, and reporting
+
+Shadow-trading workflow:
+
+```bash
+cd backend
+python scripts/freeze_shadow_champion.py
+python scripts/shadow_trading.py capture
+python scripts/shadow_trading.py settle
+python scripts/shadow_trading.py report
+```
 
 One-command reproducibility run (ingest -> quality-gated retrain -> promote -> rollback guard dry-run):
 
@@ -222,7 +256,7 @@ Then open `http://localhost:5173`.
 ## Presentation Docs
 
 - model risks and failure modes: `docs/model-risk-and-failure-modes.md`
-- interview-ready architecture narrative: `docs/interview-narrative.md`
+- architecture narrative: `docs/architecture-narrative.md`
 
 ## Notes
 

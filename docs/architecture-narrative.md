@@ -1,4 +1,4 @@
-# Interview Narrative
+# Architecture Narrative
 
 ## Problem Framing
 

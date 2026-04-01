@@ -51,6 +51,40 @@ def _ci_gate_ok(path: Path, max_age_hours: int) -> tuple[bool, str]:
     return True, ""
 
 
+def _promotion_gate_status(payload: dict[str, object]) -> tuple[bool, list[str]]:
+    """Validate that an artifact passed promotion under enforceable controls."""
+    gate = payload.get("promotion_gate", {})
+    if not isinstance(gate, dict):
+        return False, ["promotion_gate_missing"]
+
+    if not bool(gate.get("passed")):
+        failed = gate.get("failed_reasons", [])
+        if isinstance(failed, list) and failed:
+            return False, [str(item) for item in failed if str(item)]
+        return False, ["promotion_gate_failed"]
+
+    # Promotion claims are only trusted when walk-forward is actually enforced.
+    if not bool(payload.get("walk_forward_enforced")):
+        return False, ["walk_forward_gate_not_enforced"]
+
+    walk_forward = payload.get("walk_forward_gate", {})
+    if not isinstance(walk_forward, dict) or not bool(walk_forward.get("enabled")):
+        return False, ["walk_forward_gate_missing"]
+    if not bool(walk_forward.get("strict_pass_all_folds")):
+        return False, ["walk_forward_gate_not_passed"]
+
+    leakage = payload.get("data_leakage_checks", {})
+    if isinstance(leakage, dict) and leakage.get("pass") is False:
+        return False, ["data_leakage_check_not_passed"]
+
+    if bool(payload.get("martingale_enforced")):
+        martingale = payload.get("martingale_diagnostic", {})
+        if not isinstance(martingale, dict) or not bool(martingale.get("pass")):
+            return False, ["martingale_residual_autocorrelation_too_high"]
+
+    return True, []
+
+
 def main() -> None:
     """Run the script entrypoint."""
     defaults = get_settings()
@@ -138,16 +172,11 @@ def main() -> None:
                 failures.append({"symbol": symbol, "horizon": horizon, "reason": "invalid_metrics_json"})
                 continue
 
-            gate = payload.get("promotion_gate", {})
-            passed = bool(gate.get("passed")) if isinstance(gate, dict) else False
+            passed, failed_reasons = _promotion_gate_status(payload)
             if passed:
                 symbol_map[horizon] = True
             else:
-                reason = "promotion_gate_failed"
-                if isinstance(gate, dict):
-                    failed = gate.get("failed_reasons")
-                    if isinstance(failed, list) and failed:
-                        reason = ",".join(str(item) for item in failed)
+                reason = ",".join(failed_reasons) if failed_reasons else "promotion_gate_failed"
                 failures.append({"symbol": symbol, "horizon": horizon, "reason": reason})
 
         if symbol_map:
